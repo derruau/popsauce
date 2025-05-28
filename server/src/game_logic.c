@@ -68,6 +68,15 @@ int get_available_lobby_space() {
     return -1;
 }
 
+// Gets the first available player space,
+// returns -1 if no space was found
+get_available_player_space() {
+    for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
+        if (players[i] == NULL) return i;
+    }
+    return -1;
+}
+
 // Returns a player's space from his id
 // returns -1 if player doesn't exist
 int get_player_space_from_id(int player_id) {
@@ -87,11 +96,43 @@ int get_available_public_id(int lobby_id) {
     return -1;
 }
 
-//TODO
 // Creates a player and returns the MessageQueue corresponding to this player.
 // Use errno for error detection.
 MessageQueue *create_player(int player_id, char *username) {
+    if (get_player_space_from_id(player_id) != -1) {
+        errno = 1;
+        return NULL;
+    };
 
+    int player_space = get_available_player_space();
+    if (player_space == -1) {
+        errno = 2;
+        return NULL;
+    }
+
+    MessageQueue *mq = malloc(sizeof(MessageQueue));
+    if (mq == NULL) {
+        errno = 3;
+        return NULL;
+    }
+    mq_init(mq);
+
+    Player *p = (Player*)malloc(sizeof(Player));
+    if (p == NULL) {
+        errno = 3;
+        return NULL;
+    }
+
+    p->player_id = player_id;
+    strncpy(p->username, username, MAX_USERNAME_LENGTH);
+    p->state = PS_CONNECTED_TO_SERVER;
+    p->lobby_id = -1;
+    p->public_player_id = -1;
+    p->message_queue = mq;
+
+    players[player_space] = p;
+
+    return mq;
 }
 
 // TODO
