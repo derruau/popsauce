@@ -56,24 +56,24 @@ char **__parse_string(char *string, size_t *number_of_valid_answers) {
 char __replace_accent(unsigned char c) {
     switch (c) {
         // Lowercase
-        case 'à': case 'á': case 'â': case 'ã': case 'ä': case 'å': return 'a';
-        case 'è': case 'é': case 'ê': case 'ë': return 'e';
-        case 'ì': case 'í': case 'î': case 'ï': return 'i';
-        case 'ò': case 'ó': case 'ô': case 'õ': case 'ö': return 'o';
-        case 'ù': case 'ú': case 'û': case 'ü': return 'u';
-        case 'ç': return 'c';
-        case 'ñ': return 'n';
-        case 'ý': case 'ÿ': return 'y';
+        case 0xE0: case 0xE1: case 0xE2: case 0xE3: case 0xE4: case 0xE5: return 'a'; // à á â ã ä å
+        case 0xE8: case 0xE9: case 0xEA: case 0xEB: return 'e';                     // è é ê ë
+        case 0xEC: case 0xED: case 0xEE: case 0xEF: return 'i';                     // ì í î ï
+        case 0xF2: case 0xF3: case 0xF4: case 0xF5: case 0xF6: return 'o';          // ò ó ô õ ö
+        case 0xF9: case 0xFA: case 0xFB: case 0xFC: return 'u';                     // ù ú û ü
+        case 0xE7: return 'c';                                                     // ç
+        case 0xF1: return 'n';                                                     // ñ
+        case 0xFD: case 0xFF: return 'y';                                          // ý ÿ
 
         // Uppercase
-        case 'À': case 'Á': case 'Â': case 'Ã': case 'Ä': case 'Å': return 'A';
-        case 'È': case 'É': case 'Ê': case 'Ë': return 'E';
-        case 'Ì': case 'Í': case 'Î': case 'Ï': return 'I';
-        case 'Ò': case 'Ó': case 'Ô': case 'Õ': case 'Ö': return 'O';
-        case 'Ù': case 'Ú': case 'Û': case 'Ü': return 'U';
-        case 'Ç': return 'C';
-        case 'Ñ': return 'N';
-        case 'Ý': return 'Y';
+        case 0xC0: case 0xC1: case 0xC2: case 0xC3: case 0xC4: case 0xC5: return 'A'; // À Á Â Ã Ä Å
+        case 0xC8: case 0xC9: case 0xCA: case 0xCB: return 'E';                       // È É Ê Ë
+        case 0xCC: case 0xCD: case 0xCE: case 0xCF: return 'I';                       // Ì Í Î Ï
+        case 0xD2: case 0xD3: case 0xD4: case 0xD5: case 0xD6: return 'O';            // Ò Ó Ô Õ Ö
+        case 0xD9: case 0xDA: case 0xDB: case 0xDC: return 'U';                       // Ù Ú Û Ü
+        case 0xC7: return 'C';                                                       // Ç
+        case 0xD1: return 'N';                                                       // Ñ
+        case 0xDD: return 'Y';  
 
         default: return c;
     }
@@ -268,10 +268,22 @@ int destroy_lobby_table(const char *db_filename, int lobby_id) {
     return SQLITE_OK;
 }
 
-int get_random_questions(sqlite3 *db, int lobby_id, int n, Question **out_questions) {
+int get_random_questions(const char *db_filename, int lobby_id, int n, Question **out_questions) {
+    sqlite3 *db;
+    
+    // Build the SQL DROP TABLE statement
+    char sql[256];
+    snprintf(sql, sizeof(sql), "DROP TABLE IF EXISTS lobby_%d;", lobby_id);
+
+    // Open database
+    int rc = sqlite3_open(db_filename, &db);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Cannot open DB: %s\n", sqlite3_errmsg(db));
+        return rc;
+    }
+
     char query[MAX_QUERY_LENGTH];
     sqlite3_stmt *stmt = NULL;
-    int rc;
 
     snprintf(query, sizeof(query),
         "SELECT id, question, support_type, support, valid_answers FROM questions "

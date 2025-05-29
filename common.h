@@ -14,6 +14,7 @@
 #define MAX_LOBBY_LENGTH            64 // The name is really bad but it's the maximum length of the name of a lobby
 #define MAX_QUESTION_LENGTH         128
 #define MAX_NUMBER_OF_LOBBIES       16
+#define READBUFFER_LENGTH       16
 #define MAX_NUMBER_OF_PLAYERS       64
 
 #define TIME_BEFORE_GAME_STARTS     5 // (in seconds)
@@ -30,7 +31,7 @@
 
 #define SERVER_UUID             0
 
-#pragma enum(4) // To make sure the enum is stored in 4 bytes
+// #pragma enum(4) // To make sure the enum is stored in 4 bytes
 
 // IMPORTANT: Message types that need a response when sent have the LSB set to 1.
 typedef enum {
@@ -142,7 +143,6 @@ typedef enum {
     EC_INSUFFICIENT_PERMISSION,
     EC_WRONG_RESPONSE,
     EC_CANNOT_SUBMIT,
-    EC_GAME_ALREADY_STARTED
 } ResponseCode;
 
 typedef enum {
@@ -292,9 +292,8 @@ int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message *res
 uint8_t *receive_message(int sockfd, uint32_t *buffer_size, uint32_t max_buffer_size);
 
 // Deserializes a serialized message and returns a structure that can be read by the program.
-// You also need to provide the size of the buffer to be deserialized.
 // Use errno for error detection. errno == 0 when successful, and a non zero value when an error occured. 
-Message *deserialize_message(uint8_t *buffer, uint32_t buffer_size);
+Message *deserialize_message(uint8_t *buffer);
 
 // Transforms a ResponseCode into a Message
 // Use errno for error detection. errno == 0 when successful, and a non zero value when an error occured. 

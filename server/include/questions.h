@@ -41,7 +41,7 @@ int wipe_lobby_table(const char *db_filename, int lobby_id);
 
 int destroy_lobby_table(const char *db_filename, int lobby_id);
 
-int get_random_questions(sqlite3 *db, int lobby_id, int n, Question **out_questions);
+int get_random_questions(const char *db_filename, int lobby_id, int n, Question **out_questions);
 
 int insert_question(sqlite3 *db, Question *q, size_t answer_count);
 

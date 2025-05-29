@@ -4,8 +4,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <unistd.h>
 #include "common.h"
 #include "message_queue.h"
+#include "questions.h"
+
+#define NO_SOCKET -1
 
 typedef enum {
     PS_CONNECTED_TO_SERVER,
@@ -43,13 +47,15 @@ typedef struct {
     int private; // Unused, will be implemented when Lobby Rules are implemented
     int max_players;
     int players_in_lobby;
-    pthread_t thread;
+    pthread_t *game_thread;
+    pthread_t *send_thread;
     char name[MAX_LOBBY_LENGTH];
     GameState state;
     // Pour ces deux, la position dans les array est la même que
     // public_player_id
     int *player_points; // negative points => no players;
     Player **players; // NULL ptr => no player
+
     MessageQueue *receive_queue; // Messages from players to the server
     MessageQueue *send_queue; // Messages from the server broadcasted to the players
 } Lobby;
@@ -60,12 +66,10 @@ typedef enum {
     SEND_QUEUE,
 } LobbyMessageQueue;
 
-volatile Lobby *lobbies[MAX_NUMBER_OF_LOBBIES];
-volatile pthread_mutex_t lobbies_mutex[MAX_NUMBER_OF_LOBBIES]; // TODO: implement that
-volatile Player *players[MAX_NUMBER_OF_PLAYERS];
-volatile pthread_mutex_t players_mutex[MAX_NUMBER_OF_PLAYERS]; // TODO: implement that
-// The write thread of id x corresponds the lobby of id x
-volatile pthread_t write_threads[MAX_NUMBER_OF_LOBBIES] = {0};
+extern Lobby *lobbies[MAX_NUMBER_OF_LOBBIES];
+extern pthread_mutex_t lobbies_mutex[MAX_NUMBER_OF_LOBBIES]; // TODO: implement that
+extern Player *players[MAX_NUMBER_OF_PLAYERS];
+extern pthread_mutex_t players_mutex[MAX_NUMBER_OF_PLAYERS]; // TODO: implement that
 
 // Gets the first available lobby space,
 // returns -1 if no space was found
@@ -73,7 +77,7 @@ int get_available_lobby_space();
 
 // Gets the first available player space,
 // returns -1 if no space was found
-get_available_player_space();
+int get_available_player_space();
 
 // Returns a player's space from his id
 // returns -1 if player doesn't exist

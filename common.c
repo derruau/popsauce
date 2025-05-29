@@ -89,8 +89,7 @@ int __serialize_fixed_size_payload(MessageType type, void *payload, uint8_t *buf
             memcpy(buffer, &net_lobby_id, sizeof(net_lobby_id));
             return sizeof(net_lobby_id);
         case CHANGE_RULES:
-        // TODO
-            ChangeRules *changerules = (ChangeRules*)payload;
+            // TODO
             break;
         case SEND_RESPONSE:
             SendResponse *sendresponse = (SendResponse*)payload;
@@ -117,7 +116,7 @@ int __serialize_fixed_size_payload(MessageType type, void *payload, uint8_t *buf
         case GAME_ENDED:
             GameEnded *gameended = (GameEnded*)payload;
             net_player_id = htonl(gameended->winner_id);
-            memcpy(buffer, net_player_id, sizeof(net_player_id));
+            memcpy(buffer, &net_player_id, sizeof(net_player_id));
             return sizeof(net_player_id);
         case PLAYER_RESPONSE_CHANGED:
             PlayerResponseChanged *prespchanged = (PlayerResponseChanged*)payload;
@@ -206,7 +205,6 @@ int __deserialize_fixed_size_payload(MessageType type, uint8_t *buffer, void **p
             return sizeof(joinlobby->lobby_id);
         case CHANGE_RULES:
             // TODO
-            ChangeRules *changerules = (ChangeRules*)payload;
             break;
         case SEND_RESPONSE:
             *payload = malloc(sizeof(SendResponse));
@@ -247,7 +245,7 @@ int __deserialize_fixed_size_payload(MessageType type, uint8_t *buffer, void **p
             if (*payload == NULL) return 0;
 
             GameEnded *gameended = (GameEnded*)*payload;
-            memcpy(gameended->winner_id, buffer, sizeof(gameended->winner_id));
+            memcpy(&(gameended->winner_id), buffer, sizeof(gameended->winner_id));
             gameended->winner_id = ntohl(gameended->winner_id);
             return sizeof(gameended->winner_id);
         case PLAYER_RESPONSE_CHANGED:
@@ -346,7 +344,7 @@ int __deserialize_question_sent(uint8_t *buffer, void **payload) {
 
     offset += sizeof(qsent->question);
 
-    size_t support_length = strlen(buffer + offset);
+    size_t support_length = strlen((char*)(buffer + offset));
     char *support = (char*)malloc(sizeof(char)*support_length);
     if (support == NULL) {
         free(qsent);
@@ -562,7 +560,7 @@ int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message *res
         return errno;
     }
 
-    response = deserialize_message(rbuffer, rbuffer_size);
+    response = deserialize_message(rbuffer);
 
     if (errno != 0) {
         if (response != NULL) free_message(response);
@@ -584,7 +582,7 @@ uint8_t *receive_message(int sockfd, uint32_t *buffer_size, uint32_t max_buffer_
     uint8_t *readbuffer = malloc(sizeof(uint8_t)*READBUFFER_LENGTH);
 
     uint8_t char_buffer;
-    while (total_char_read < max_buffer_size) {
+    while ((uint32_t)total_char_read < max_buffer_size) {
         int nb_read = read(sockfd, &char_buffer, 1);
 
         if (nb_read == -1) {
@@ -617,7 +615,7 @@ uint8_t *receive_message(int sockfd, uint32_t *buffer_size, uint32_t max_buffer_
                 return NULL;
             }
 
-            strncpy(_tmp, readbuffer, total_char_read - 1);
+            strncpy((char*)_tmp, (char*)readbuffer, total_char_read - 1);
             readbuffer_size = (int)(readbuffer_size*1.5);
 
             readbuffer = _tmp;
@@ -631,9 +629,8 @@ uint8_t *receive_message(int sockfd, uint32_t *buffer_size, uint32_t max_buffer_
 }
 
 // Deserializes a serialized message and returns a structure that can be read by the program.
-// You also need to provide the size of the buffer to be deserialized.
 // Use errno for error detection. errno == 0 when successful, and a non zero value when an error occured. 
-Message *deserialize_message(uint8_t *buffer, uint32_t buffer_size) {
+Message *deserialize_message(uint8_t *buffer) {
     // Type
     uint32_t type;
     memcpy(&type, buffer, sizeof(type));
@@ -671,7 +668,7 @@ Message *deserialize_message(uint8_t *buffer, uint32_t buffer_size) {
     }
 
     // If didn't copy the same amount of bytes
-    if (bytes_copied != payload_size) {
+    if ((uint32_t)bytes_copied != payload_size) {
         errno = 2;
         return NULL;
     }

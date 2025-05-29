@@ -22,35 +22,8 @@ Usage:
     - ./popsauce-server list
     - ./popsauce-server rm [ID]
 */
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <signal.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 
-#include "game_logic.h"
-#include "message_queue.h"
-#include "questions.h"
-#include "common.h"
-
-#define PORT "7677" // Because it writes POPS on a 3x3 phone keyboard
-
-int listen_socket;
-pthread_t  client_threads[MAX_NUMBER_OF_PLAYERS] = {0};
-pthread_t send_threads[MAX_NUMBER_OF_LOBBIES] = {0};
-int available_client_threads[MAX_NUMBER_OF_PLAYERS] = {0};
-
-volatile int server_online = 1;
-
-typedef struct {
-    int socket;
-    int connection_id;
-} session_thread_args;
+#include "main.h"
 
 char *stringIP(uint32_t entierIP) {
     struct in_addr ia;
@@ -89,8 +62,6 @@ int broadcast(Message *m, int lobby_id) {
 void *handle_server_broadcast(void *args) {
     pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
     int lobby_id = *((int*)args);
-
-    MessageQueue *send_queue;
 
     while (1) {
         int send_queue_empty = lobby_mq_is_empty(lobby_id, SEND_QUEUE);
@@ -156,12 +127,12 @@ void INThandler(int sig) {
     char  c;
 
     signal(sig, SIG_IGN);
-    printf("\x1b7\rVoulez vous vraiment quitter? [y/N] ");
+    printf("\x1b""7\r Do you really want to quit?? [y/N] ");
     fflush(stdout);
     c = getchar();
     if (c == 'y' || c == 'Y') {
         server_online = 0;
-        printf("[SERVEUR]: Arret du serveur...\n");
+        printf("[SERVER]: Server stopping...\n");
         // On ferme bien toutes les connections avant de fermer le serveur
         for (int i=0; i < MAX_NUMBER_OF_PLAYERS; i++) {
             if (available_client_threads[i] != 0) {
@@ -173,7 +144,7 @@ void INThandler(int sig) {
         exit(EXIT_SUCCESS);
     }
     else {
-        printf("\x1b8\r\x1b[0J");
+        printf("\x1b""8\r\x1b[0J");
         signal(SIGINT, INThandler);
     }
     return;
@@ -206,7 +177,7 @@ int safe_send_message(int socket, Message *m) {
         if (ok != 0) exit(EXIT_FAILURE);
     }
 
-    send_message(socket, buffer, buffer_size, NULL);
+    return send_message(socket, buffer, buffer_size, NULL);
 }
 
 void *handle_client_thread(void *arg) {
@@ -239,17 +210,18 @@ void *handle_client_thread(void *arg) {
             pthread_exit(NULL);
         }
 
-        Message *m = deserialize_message(buffer, buffer_size);
+        Message *m = deserialize_message(buffer);
 
         // TODO: implement private server and banned users (using ip addresses) 
         // Put the functions that check for that here
 
         ResponseCode rc;
         Message *response;
+        int lobby_id;
         switch (m->type) {
         case CONNECT:
             Connect *c = (Connect*)m->payload;
-            rc = create_player(socket, m->uuid, c->username);
+            rc = create_player(a->socket, m->uuid, c->username);
             if (rc == RC_SUCCESS) {
                 rc = get_lobby_list(&response);
 
@@ -269,12 +241,11 @@ void *handle_client_thread(void *arg) {
                 response = responsecode_to_message(rc, SERVER_UUID, rc);
             }
 
-            int lobby_id = get_lobby_of_player(m->uuid);
-            if (response != NULL) lobby_enqueue(lobby_id, SEND_QUEUE, response, NULL);
+            lobby_id = get_lobby_of_player(m->uuid);
+            if (response != NULL) lobby_enqueue(lobby_id, SEND_QUEUE, response, NO_SOCKET);
             break;
         case CREATE_LOBBY:
             CreateLobby *cl = (CreateLobby*)m->payload;
-            int lobby_id;
             rc = create_lobby(cl->name, cl->max_players, m->uuid, &lobby_id);
 
             response = responsecode_to_message(rc, SERVER_UUID, lobby_id);
@@ -294,7 +265,7 @@ void *handle_client_thread(void *arg) {
             Message *playerjoined;
             rc = join_lobby(m->uuid, jl->lobby_id, &playerjoined);
 
-            int lobby_id = get_lobby_of_player(m->uuid);
+            lobby_id = get_lobby_of_player(m->uuid);
             
             if (rc != RC_SUCCESS) {
                 free_message(playerjoined);
@@ -306,29 +277,26 @@ void *handle_client_thread(void *arg) {
             safe_send_message(a->socket, response);
 
             int lobby_id = get_lobby_of_player(m->uuid);
-            lobby_enqueue(lobby_id, SEND_QUEUE, playerjoined, NULL);
+            lobby_enqueue(lobby_id, SEND_QUEUE, playerjoined, NO_SOCKET);
             break;
         case QUIT_LOBBY:
-            PlayerQuit *playerquit;
+            Message *playerquit;
             rc = quit_lobby(m->uuid, &playerquit);
 
-            int lobby_id = get_lobby_of_player(m->uuid);
+            lobby_id = get_lobby_of_player(m->uuid);
 
             // TODO: maybe add a confirmation message that you successfully quit?
             if (rc != RC_SUCCESS) {
                 free_message(playerquit);
                 break;
-            } else lobby_enqueue(lobby_id, SEND_QUEUE, playerquit, NULL);
+            } else lobby_enqueue(lobby_id, SEND_QUEUE, playerquit, NO_SOCKET);
             break;
         case START_GAME:
-            Message *gamestarts;
-            int lobby_id = get_lobby_of_player(m->uuid);
+            lobby_id = get_lobby_of_player(m->uuid);
             rc = start_game(m->uuid, lobby_id);
             // The response is queued by game_loop()
 
-            // TODO: remove
             if (rc != RC_SUCCESS) {
-                free_message(gamestarts);
                 response = responsecode_to_message(rc, SERVER_UUID, rc);
                 safe_send_message(a->socket, response);
                 break;
@@ -338,7 +306,7 @@ void *handle_client_thread(void *arg) {
             //TODO:
             break;
         case SEND_RESPONSE:
-            int lobby_id = get_lobby_of_player(m->uuid);
+            lobby_id = get_lobby_of_player(m->uuid);
                         
             if (!can_submit_answers(lobby_id, m->uuid)) {
                 response = responsecode_to_message(EC_CANNOT_SUBMIT, SERVER_UUID, EC_CANNOT_SUBMIT);
@@ -363,24 +331,20 @@ void *handle_client_thread(void *arg) {
     pthread_exit(NULL);
 }
 
-void print_help() {
-    printf(
-        "POPSAUCE-SERVER - Usage:\n"
-        "   - ./popsauce-server: starts the server\n"
-        "   - ./popsauce-server add [txt/img]: adds a new question to the database.\n"
-        "             This command starts a menu to add a question.\n"
-        "             'txt' for text style support and 'img' for image format support.\n"
-        "             IMPORTANT: 'img' doesn't work for now!\n"
-        "\n"
-        "More options incoming..."
-    );
-}
+// void print_help() {
+//     printf(
+//         "POPSAUCE-SERVER - Usage:\n"
+//         "   - ./popsauce-server: starts the server\n"
+//         "   - ./popsauce-server add [txt/img]: adds a new question to the database.\n"
+//         "             This command starts a menu to add a question.\n"
+//         "             'txt' for text style support and 'img' for image format support.\n"
+//         "             IMPORTANT: 'img' doesn't work for now!\n"
+//         "\n"
+//         "More options incoming..."
+//     );
+// }
 
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        print_help();
-    }
-
     if ( (argc == 3) && (strcmp(argv[1], "add") == 0)) {
         SupportType support_type = STRING;
         if (strcmp(argv[2], "img") == 0) support_type = BITMAP;
@@ -390,20 +354,21 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
 
+        init_database(DATABASE_PATH);
         
         question->support_type = support_type;
         printf("Enter the question: ");
-        scanf(" %s", &question);
+        scanf(" %s", question->question);
 
         // Normally, this should be of size MAX_PAYLOAD_LENGTH
         char support_buffer[2048];
         printf("Enter the support to the question: ");
-        scanf(" %s", &support_buffer);
+        scanf(" %s", support_buffer);
         strncpy(question->support, support_buffer, 2048);
 
         char valid_answers_buffer[512];
         printf("Enter the possible answers to the question (separated by a comma): ");
-        scanf(" %s", &valid_answers_buffer);
+        scanf(" %s", valid_answers_buffer);
         size_t number_of_valid_answers;
         question->valid_answers = __parse_string(valid_answers_buffer, &number_of_valid_answers);
         question->number_of_valid_answers = number_of_valid_answers;
@@ -413,15 +378,18 @@ int main(int argc, char *argv[]) {
 
     struct sockaddr_in client_socket;
 
+    printf("[SERVER]: Initializing Database...\n");
     init_database(DATABASE_PATH);
+    printf("[SERVER]: Database Initialized...\n");
 
     int listen_fd = server_listen(PORT);
+    printf("[SERVER]: Server Listening on port '%s'\n", PORT);
 
     signal(SIGINT, INThandler);
     
     while (1) {
         unsigned int client_socket_size = sizeof(client_socket);
-        int socket = accept(listen_fd, &client_socket, &client_socket_size);
+        int socket = accept(listen_fd, (struct sockaddr*)&client_socket, &client_socket_size);
         if (socket < 0) {
             continue;
         };

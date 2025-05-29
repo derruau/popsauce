@@ -53,3 +53,5 @@ dkms.conf
 
 # VSCode
 .vscode/
+**/*.sqlite
+popsauce-server
