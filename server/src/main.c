@@ -8,7 +8,7 @@ J'ai besoin de:
 - Un moyen de choisir des questions
     - Une connection à sqlite qui cherche dans la db de question
 - Un moyen de communiquer avec le(s) client(s).
-    - Protocol de communicatigetAvailableThreadIdon et fonctions pour faciliter ça.
+    - Protocol de communicatigetavailable_client_threadson et fonctions pour faciliter ça.
 
 
 Usage:
@@ -33,21 +33,21 @@ Usage:
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include "game_logic.h"
+#include "message_queue.h"
 #include "common.h"
 
 // TODO: deplacer dans le fichier de config
 #define PORT "7677" // PSQ ça fait 'POPS' sur un clavier de téléphone 3x3
-#define BUF_SIZE 1024
-#define MAX_CLIENT_CONNECTIONS 16
 
 int listen_socket;
-pthread_t ThreadId[MAX_CLIENT_CONNECTIONS] = {0};
-int AvailableThreadId[MAX_CLIENT_CONNECTIONS] = {0};
+pthread_t  client_threads[MAX_NUMBER_OF_PLAYERS] = {0};
+int available_client_threads[MAX_NUMBER_OF_PLAYERS] = {0};
 
 volatile int server_online = 1;
 
 typedef struct {
-    int canal;
+    int socket;
     int connection_id;
 } session_thread_args;
 
@@ -56,6 +56,74 @@ char *stringIP(uint32_t entierIP) {
     ia.s_addr = htonl(entierIP); 
     return inet_ntoa(ia);
   }
+
+// Sends a message to every client of a lobby at once.
+// Retuns 0 when successfull and a nonzero value when an error occured
+int broadcast(Message *m, int lobby_id) {
+    int retval = 0;
+
+    uint32_t buffer_size;
+    uint8_t *buffer;
+
+    int ok = serialize_message(m, &buffer, &buffer_size);
+
+    if (ok != 0) {
+        free_message(m);
+        m = responsecode_to_message(EC_INTERNAL_ERROR, SERVER_UUID, EC_INTERNAL_ERROR);
+        ok = serialize_message(m, &buffer, &buffer_size);
+        // IDK How we got here
+        if (ok != 0) exit(EXIT_FAILURE);
+    }
+
+    int players_in_lobby;
+    Player **plist = get_players_from_lobby(lobby_id, &players_in_lobby);
+    for (int i = 0; i < players_in_lobby; i++) {
+        retval |= send_message(plist[i]->socket, buffer, buffer_size, NULL);   
+    }
+
+    return retval;
+}
+
+
+void *handle_server_broadcast(void *args) {
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    int lobby_id = *((int*)args);
+
+    MessageQueue *send_queue;
+
+    while (1) {
+        int send_queue_empty = lobby_mq_is_empty(lobby_id, SEND_QUEUE);
+        if (send_queue_empty == -1) break; // Lobby doesn't exist anymore
+        if (send_queue_empty == 1) continue;
+
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+        
+        MessageQueueItem *mqi = lobby_dequeue(lobby_id, SEND_QUEUE);
+
+        uint32_t buffer_size;
+        uint8_t *buffer;
+        int err = serialize_message(mqi->m, &buffer, &buffer_size);
+
+        // When an error occures, skip the message but don't crash.
+        // We don't need to free buffer because a nonzero value only appears when
+        // malloc on buffer failed.
+
+        if (err != 0) {
+            continue;
+        }
+
+        // Even if there's an error here we can't do anything about it so we don't check
+        send_message(mqi->socket, buffer, buffer_size, NULL);
+
+        free(buffer);
+        free_message(mqi->m);
+        
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+
+    }
+
+    pthread_exit(NULL);
+}
 
 int server_listen(char *port) {
     struct sockaddr_in listen_socket;
@@ -94,9 +162,9 @@ void INThandler(int sig) {
         server_online = 0;
         printf("[SERVEUR]: Arret du serveur...\n");
         // On ferme bien toutes les connections avant de fermer le serveur
-        for (int i=0; i<MAX_CLIENT_CONNECTIONS; i++) {
-            if (AvailableThreadId[i] != 0) {
-                pthread_cancel(ThreadId[AvailableThreadId[i]]);
+        for (int i=0; i < MAX_NUMBER_OF_PLAYERS; i++) {
+            if (available_client_threads[i] != 0) {
+                pthread_cancel(client_threads[available_client_threads[i]]);
             }
         }
     
@@ -110,9 +178,9 @@ void INThandler(int sig) {
     return;
 }
 
-int getAvailableThreadId() {
-    for (int i = 0; i < MAX_CLIENT_CONNECTIONS; i++) {
-        if (AvailableThreadId[i] == 0) {
+int getavailable_client_threads() {
+    for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
+        if (available_client_threads[i] == 0) {
             return i;
         }
     }
@@ -120,22 +188,166 @@ int getAvailableThreadId() {
     return -1;
 }
 
-void *client_session(void *arg) {
-    session_thread_args *a = (session_thread_args*)arg;
+// Tries to send a message with a lot of failsafe mechanisms.
+// When something fails, this function still tries to send a EC_INTERNAL_ERROR message.
+// When even this fails the server crashes because something went very wrong.
+int safe_send_message(int socket, Message *m) {
+    uint8_t *buffer;
+    uint32_t buffer_size;
+    int ok = serialize_message(m, &buffer, &buffer_size);
 
-    char *buf = malloc(sizeof(char)*BUF_SIZE);
-    while(1) {
-        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-        //int nbOctetsRecus = lireLigne(a->canal, buf);
-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+    if (ok != 0) {
+        free_message(m);
+        m = responsecode_to_message(EC_INTERNAL_ERROR, SERVER_UUID, EC_INTERNAL_ERROR);
+        ok = serialize_message(m, &buffer, &buffer_size);
 
-        // TODO: interpréter les messages du client
-        break;
+        // IDK how we even got here
+        if (ok != 0) exit(EXIT_FAILURE);
     }
 
-    AvailableThreadId[a->connection_id] = 0;
-    close(a->canal);
-    free(buf);
+    send_message(socket, buffer, buffer_size, NULL);
+}
+
+void *handle_client_thread(void *arg) {
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+    session_thread_args *a = (session_thread_args*)arg;
+
+    uint32_t buffer_size;
+    uint8_t *buffer;
+    while(1) {
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+        buffer = receive_message(a->socket, &buffer_size, MAX_PAYLOAD_LENGTH);
+        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
+
+        if (errno != 0) {
+            free(buffer);
+            continue;
+        }
+            
+        // This happens because of a sudden disconnect from the client
+        if (buffer_size == 0) {
+            int player_id = get_player_id_from_socket(a->socket);
+            if (player_id != -1) {
+                Message *playerquit;
+                delete_player(player_id, &playerquit);
+                safe_send_message(a->socket, playerquit);
+            }
+            close(a->socket);
+            free(buffer);
+            free(a);
+            pthread_exit(NULL);
+        }
+
+        Message *m = deserialize_message(buffer, buffer_size);
+
+        // TODO: implement private server and banned users (using ip addresses) 
+        // Put the functions that check for that here
+
+        ResponseCode rc;
+        Message *response;
+        switch (m->type) {
+        case CONNECT:
+            Connect *c = (Connect*)m->payload;
+            rc = create_player(socket, m->uuid, c->username);
+            if (rc == RC_SUCCESS) {
+                rc = get_lobby_list(&response);
+
+                // get_lobby_list() doesn't leak when it fails so we don't have to free anything
+                if (rc != RC_SUCCESS) response = responsecode_to_message(EC_INTERNAL_ERROR, SERVER_UUID, EC_INTERNAL_ERROR);
+            } else {
+                response = responsecode_to_message(rc, SERVER_UUID, rc);
+            }
+
+            safe_send_message(a->socket, response);
+            break;
+        case DISCONNECT:
+            rc = delete_player(m->uuid, &response);
+
+            if (rc != RC_SUCCESS) {
+                free_message(response);
+                response = responsecode_to_message(rc, SERVER_UUID, rc);
+            }
+
+            int lobby_id = get_lobby_of_player(m->uuid);
+            if (response != NULL) lobby_enqueue(lobby_id, SEND_QUEUE, response, NULL);
+            break;
+        case CREATE_LOBBY:
+            CreateLobby *cl = (CreateLobby*)m->payload;
+            int lobby_id;
+            rc = create_lobby(cl->name, cl->max_players, m->uuid, &lobby_id);
+
+            response = responsecode_to_message(rc, SERVER_UUID, lobby_id);
+
+            // Cannot recover from this error, crashes the server.
+            if (errno != 0) exit(EXIT_FAILURE);
+
+            safe_send_message(a->socket, response);
+            break;
+        case JOIN_LOBBY:
+            JoinLobby *jl = (JoinLobby*)m->payload;
+            Message *playerjoined;
+            rc = join_lobby(m->uuid, jl->lobby_id, &playerjoined);
+
+            int lobby_id = get_lobby_of_player(m->uuid);
+            
+            if (rc != RC_SUCCESS) {
+                free_message(playerjoined);
+                response = responsecode_to_message(rc, SERVER_UUID, rc);
+                safe_send_message(a->socket, response);
+                break;
+            } else get_players_data(lobby_id, &response);
+
+            safe_send_message(a->socket, response);
+
+            int lobby_id = get_lobby_of_player(m->uuid);
+            lobby_enqueue(lobby_id, SEND_QUEUE, playerjoined, NULL);
+            break;
+        case QUIT_LOBBY:
+            PlayerQuit *playerquit;
+            rc = quit_lobby(m->uuid, &playerquit);
+
+            int lobby_id = get_lobby_of_player(m->uuid);
+
+            // TODO: maybe add a confirmation message that you successfully quit?
+            if (rc != RC_SUCCESS) {
+                free_message(playerquit);
+                break;
+            } else lobby_enqueue(lobby_id, SEND_QUEUE, playerquit, NULL);
+            break;
+        case START_GAME:
+            Message *gamestarts;
+            int lobby_id = get_lobby_of_player(m->uuid);
+            rc = start_game(m->uuid, lobby_id, &gamestarts);
+
+            if (rc != RC_SUCCESS) {
+                free_message(gamestarts);
+                response = responsecode_to_message(rc, SERVER_UUID, rc);
+                safe_send_message(a->socket, response);
+                break;
+            }
+
+            lobby_enqueue(lobby_id, SEND_QUEUE, gamestarts, NULL);
+            break;
+        case CHANGE_RULES:
+            //TODO:
+            break;
+        case SEND_RESPONSE:
+            int lobby_id = get_lobby_of_player(m->uuid);
+            lobby_enqueue(lobby_id, RECEIVE_QUEUE, m, a->socket);
+            // The response is queued by game_loop()
+            break;
+        default:
+            //TODO
+            // If this executes, the client sent a message only meant for servers to send to clients (bad)
+            // those messages are: PLAYER_JOINED, PLAYER_QUIT, GAME_STARTS, RULES_CHANGED, PLAYER_RESPONSE_CHANGED
+            // QUESTION_SENT, ANSWER_SENT and GAME_ENDED
+            break;
+        }
+    }
+
+    available_client_threads[a->connection_id] = 0;
+    close(a->socket);
+    free(buffer);
     free(a);
     pthread_exit(NULL);
 }
@@ -149,12 +361,12 @@ int main(int argc, char *argv[]) {
     
     while (1) {
         unsigned int client_socket_size = sizeof(client_socket);
-        int canal = accept(listen_fd, &client_socket, &client_socket_size);
-        if (canal < 0) {
+        int socket = accept(listen_fd, &client_socket, &client_socket_size);
+        if (socket < 0) {
             // TODO: impossible de se connecter au client
         };
 
-        int available_thread = getAvailableThreadId();
+        int available_thread = getavailable_client_threads();
         if (available_thread == -1) {
             printf("[ERREUR]: Impossible d'accepter une connection supplémentaire, le serveur est plein!\n");
             continue;
@@ -167,23 +379,23 @@ int main(int argc, char *argv[]) {
         );
 
         session_thread_args *arg = malloc(sizeof(session_thread_args));
-        arg->canal = canal;
+        arg->socket = socket;
         arg->connection_id = available_thread;
 
-        int ret = pthread_create(&ThreadId[available_thread], NULL, client_session, arg);
+        int ret = pthread_create(&client_threads[available_thread], NULL, handle_client_thread, arg);
         if (ret != 0) {
             printf("[ERREUR]: Impossible de créer le thread pour la communication avec l'IP: %s", stringIP(ntohl(client_socket.sin_addr.s_addr)));
         }
 
-        AvailableThreadId[available_thread] = 1;
+        available_client_threads[available_thread] = 1;
 
     }
 
     printf("[SERVEUR]: Arret du serveur...\n");
     // On ferme bien toutes les connections avant de fermer le serveur
-    for (int i=0; i<MAX_CLIENT_CONNECTIONS; i++) {
-        if (AvailableThreadId[i] != 0) {
-            pthread_join(ThreadId[AvailableThreadId[i]], NULL);
+    for (int i=0; i < MAX_NUMBER_OF_PLAYERS; i++) {
+        if (available_client_threads[i] != 0) {
+            pthread_join(client_threads[available_client_threads[i]], NULL);
         }
     }
 

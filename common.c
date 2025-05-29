@@ -66,6 +66,7 @@ int __serialize_fixed_size_payload(MessageType type, void *payload, uint8_t *buf
     }
 
     // This is tedious work and the order needs to be respected for deserialization.
+    int offset = 0;
     uint32_t net_max_users;
     uint32_t net_lobby_id;
     uint32_t net_player_id;
@@ -121,9 +122,17 @@ int __serialize_fixed_size_payload(MessageType type, void *payload, uint8_t *buf
         case PLAYER_RESPONSE_CHANGED:
             PlayerResponseChanged *prespchanged = (PlayerResponseChanged*)payload;
             net_player_id = htonl(prespchanged->player_id);
+            int net_points_earned = htonl(prespchanged->points_earned);
+            int net_is_correct = htonl(prespchanged->is_correct);
             memcpy(buffer, &net_player_id, sizeof(net_player_id));
-            memcpy(buffer + sizeof(net_player_id), prespchanged->response, sizeof(prespchanged->response));
-            return sizeof(net_player_id) + sizeof(prespchanged->response);
+            offset += sizeof(net_player_id);
+            memcpy(buffer + offset, &net_points_earned, sizeof(net_points_earned));
+            offset += sizeof(net_points_earned);
+            memcpy(buffer + offset, &net_is_correct, sizeof(net_is_correct));
+            offset += sizeof(net_is_correct);   
+            memcpy(buffer + offset, prespchanged->response, sizeof(prespchanged->response));
+            offset += sizeof(prespchanged->response);
+            return offset;
         case LOBBYLIST:
             LobbyList *lobbylist = (LobbyList*)payload;
             net_quantity = htonl(lobbylist->__quantity);
@@ -168,6 +177,7 @@ int __deserialize_fixed_size_payload(MessageType type, uint8_t *buffer, void **p
         return 0;
     }
 
+    int offset = 0;
     // This is tedious work and the order needs to be respected for deserialization.
     switch (type) {
         case CONNECT:
@@ -247,8 +257,16 @@ int __deserialize_fixed_size_payload(MessageType type, uint8_t *buffer, void **p
             PlayerResponseChanged *prespchanged = (PlayerResponseChanged*)*payload;
             memcpy(&(prespchanged->player_id), buffer, sizeof(prespchanged->player_id));
             prespchanged->player_id = ntohl(prespchanged->player_id);
-            memcpy(prespchanged->response, buffer + sizeof(prespchanged->player_id), sizeof(prespchanged->response));
-            return sizeof(prespchanged->player_id) + sizeof(prespchanged->response);
+            offset += sizeof(prespchanged->player_id);
+            memcpy(&(prespchanged->points_earned), buffer + offset, sizeof(prespchanged->points_earned));
+            prespchanged->points_earned = ntohl(prespchanged->points_earned);
+            offset += sizeof(prespchanged->points_earned);
+            memcpy(&(prespchanged->is_correct), buffer + offset, sizeof(prespchanged->is_correct));
+            prespchanged->is_correct = ntohl(prespchanged->is_correct);
+            offset += sizeof(prespchanged->is_correct);
+            memcpy(prespchanged->response, buffer + offset, sizeof(prespchanged->response));
+            offset += sizeof(prespchanged->response);
+            return offset;
         case LOBBYLIST:
             *payload = malloc(sizeof(LobbyList));
             if (*payload == NULL) return 0;
@@ -668,6 +686,31 @@ Message *deserialize_message(uint8_t *buffer, uint32_t buffer_size) {
     m->type = type;
     m->uuid = uuid;
     m->payload_size = payload_size;
+    m->payload = payload;
+
+    return m;
+}
+
+Message *responsecode_to_message(ResponseCode rc, int uuid, int data) {
+    Message *m = (Message*)malloc(sizeof(Message));
+
+    if (m == NULL) {
+        errno = 1;
+        return NULL;
+    }
+
+    void *payload = rc == RC_SUCCESS ? malloc(sizeof(Success)) : malloc(sizeof(Error));
+
+    if ( payload == NULL) {
+        errno = 2;
+        free(m);
+        return NULL;
+    }
+    if (rc == RC_SUCCESS) ((Success*)payload)->data = data; else ((Error*)payload)->data = data; 
+
+    m->uuid = uuid;
+    m->type = rc == RC_SUCCESS ? SUCCESS : ERROR;
+    m->payload_size = __get_payload_size(m->type, payload);
     m->payload = payload;
 
     return m;

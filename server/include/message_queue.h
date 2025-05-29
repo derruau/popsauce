@@ -3,12 +3,14 @@
 
 #include <time.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include "common.h"
 
 #define MAX_QUEUE_SIZE 20 // TODO: ne pas mettre une valeur au pif
 
 typedef struct {
     time_t time;
+    int socket;
     Message *m;
 } MessageQueueItem;
 
@@ -16,6 +18,7 @@ typedef struct {
     MessageQueueItem *items[MAX_QUEUE_SIZE];
     int rear;
     int front;
+    pthread_mutex_t mutex;
 } MessageQueue;
 
 void mq_init(MessageQueue* q);
@@ -24,8 +27,9 @@ int mq_is_empty(MessageQueue* q);
 
 int mq_is_full(MessageQueue* q);
 
-void mq_enqueue(MessageQueue* mq, Message *m);
+void mq_enqueue(MessageQueue* mq, Message *m, int socket);
 
 MessageQueueItem *mq_dequeue(MessageQueue* mq);
 
+void mq_free(MessageQueue *mq);
 #endif

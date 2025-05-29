@@ -32,6 +32,7 @@ typedef enum {
     // Sent when connecting to server. It's used to provide the server with the client's informations.
     // The server responds by either sending a `LOBBYLIST` in which case you're successfully connected
     // or an `ERROR` response with the following error codes:
+    // - `EC_PLAYER_UUID_EXISTS`: When a player has the same player_id as yours 
     // - `EC_TOO_MANY_PLAYERS`: Server is full and cannot accept any more players.
     // - `EC_BANNED`: You have been banned from this server.
     // - `EC_SERVER_PRIVATE`: Only whitelisted IPs can join the server. Theses whitelisted IPs can be configured in `server.conf`.
@@ -47,8 +48,8 @@ typedef enum {
     // - `EC_INTERNAL_ERROR`: A general error that means something has gone very wrong with the server.
     CREATE_LOBBY                = 0b000011,
     // Sent to the server when wanting to join a certain lobby
-    // The server responds by either sending a `PLAYERS_DATA` in which case you've officially joined the lobby
-    // or an `ERROR` response with the following error codes:
+    // The server responds by either sending a `PLAYERS_DATA` (it also contains your data) in which case you've
+    // officially joined the lobby or an `ERROR` response with the following error codes:
     // - `EC_LOBBY_PRIVATE`: (UNUSED) Only whitelisted players can join
     // - `EC_ALREADY_IN_LOBBY`: When you're trying to join a lobby but you're already in one
     // - `EC_GAME_ALREADY_STARTED`: When you're trying to join a lobby whose game has already started 
@@ -59,7 +60,7 @@ typedef enum {
     // Sent to the server when quitting a lobby. Suddently closing the program also works but sending this message is recommended.
     QUIT_LOBBY                  = 0b000110,
     // Sent to the server when you're the lobby's host and want to start the game.
-    // The server response by either sending a `SUCCESS` in which case the game starts in 5 seconds.
+    // The server response by either sending a `SUCCESS`
     // or it sends an `ERROR` response with the following error codes:
     // - `EC_LOBBY_DOESNT_EXIST`: The lobby doesn't exist, either because it was deleted or because it never existed in the first place.
     // - `EC_NOT_ENOUGH_PLAYERS`: The game can only start when enough players have joined.
@@ -68,7 +69,7 @@ typedef enum {
     // - `EC_INTERNAL_ERROR`: A general error that means something has gone very wrong with the server.
     START_GAME                  = 0b000111,
     // Sent to the server when the host changes the rules of the lobby.
-    // The server either responds by sending a `SUCCESS`
+    // The server either responds by sending a `SUCCESS` in which case the game starts in 5 seconds.
     // or an `ERROR` with the following error codes:
     // - `EC_INSUFFICIENT_PERMISSION`: You're not the lobby's host.
     // - `EC_INTERNAL_ERROR`: A general error that means something has gone very wrong with the server.
@@ -117,6 +118,7 @@ typedef enum {
 
 typedef enum {
     RC_SUCCESS, // When an operation executed successfully
+    EC_PLAYER_UUID_EXISTS,
     EC_INTERNAL_ERROR,
     EC_SERVER_PRIVATE,
     EC_BANNED,
@@ -181,6 +183,8 @@ typedef struct {
 
 typedef struct {
     int player_id;
+    int points_earned;
+    int is_correct;
     char response[MAX_RESPONSE_LENGTH];
 } PlayerResponseChanged;
 
@@ -285,4 +289,7 @@ uint8_t *receive_message(int sockfd, uint32_t *buffer_size, uint32_t max_buffer_
 // Use errno for error detection. errno == 0 when successful, and a non zero value when an error occured. 
 Message *deserialize_message(uint8_t *buffer, uint32_t buffer_size);
 
+// Transforms a ResponseCode into a Message
+// Use errno for error detection. errno == 0 when successful, and a non zero value when an error occured. 
+Message *responsecode_to_message(ResponseCode rc, int uuid, int data);
 #endif
