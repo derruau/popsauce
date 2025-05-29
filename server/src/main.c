@@ -352,6 +352,7 @@ void *handle_client_thread(void *arg) {
     pthread_exit(NULL);
 }
 
+// TODO: Instancier les handle_server_broadcast
 int main(int argc, char *argv[]) {
     struct sockaddr_in client_socket;
 

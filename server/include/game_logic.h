@@ -1,8 +1,5 @@
-/*
-TODO: Use Mutex to block access to lobbies and players while an operation is ongoing
-TODO: To avoid repeating questions, we need to select unique questions each time
-
-*/
+#ifndef GAME_LOGIC_HEADER
+#define GAME_LOGIC_HEADER
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -139,3 +136,5 @@ int can_submit_answers(int lobby_id);
 // de (1) vers (2): Je dois envoyer: ANSWER_SENT
 // Dans tout les cas, on va avoir besoin d'une file de message à traiter
 void *game_loop(void *args);
+
+#endif
