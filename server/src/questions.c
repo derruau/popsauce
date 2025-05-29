@@ -270,10 +270,8 @@ int destroy_lobby_table(const char *db_filename, int lobby_id) {
 
 int get_random_questions(const char *db_filename, int lobby_id, int n, Question **out_questions) {
     sqlite3 *db;
-    
-    // Build the SQL DROP TABLE statement
-    char sql[256];
-    snprintf(sql, sizeof(sql), "DROP TABLE IF EXISTS lobby_%d;", lobby_id);
+    char query[MAX_QUERY_LENGTH];
+    sqlite3_stmt *stmt = NULL;
 
     // Open database
     int rc = sqlite3_open(db_filename, &db);
@@ -281,9 +279,6 @@ int get_random_questions(const char *db_filename, int lobby_id, int n, Question 
         fprintf(stderr, "Cannot open DB: %s\n", sqlite3_errmsg(db));
         return rc;
     }
-
-    char query[MAX_QUERY_LENGTH];
-    sqlite3_stmt *stmt = NULL;
 
     snprintf(query, sizeof(query),
         "SELECT id, question, support_type, support, valid_answers FROM questions "
@@ -345,10 +340,18 @@ int get_random_questions(const char *db_filename, int lobby_id, int n, Question 
     return count; // Return how many questions were actually retrieved
 }
 
-int insert_question(sqlite3 *db, Question *q, size_t answer_count) {
+int insert_question(const char *db_filename, Question *q, size_t answer_count) {
+    sqlite3 *db;
     const char *sql = "INSERT INTO questions (question, support_type, support, valid_answers) VALUES (?, ?, ?, ?);";
     sqlite3_stmt *stmt;
-    int rc;
+    
+    // Open database
+    int rc = sqlite3_open(db_filename, &db);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Cannot open DB: %s\n", sqlite3_errmsg(db));
+        return rc;
+    }
+
 
     // Combine valid_answers array into a single string
     char *valid_answers_combined = __combine_strings(q->valid_answers, answer_count);

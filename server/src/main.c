@@ -358,20 +358,26 @@ int main(int argc, char *argv[]) {
         
         question->support_type = support_type;
         printf("Enter the question: ");
-        scanf(" %s", question->question);
+        fgets(question->question, MAX_QUESTION_LENGTH, stdin);
 
         // Normally, this should be of size MAX_PAYLOAD_LENGTH
         char support_buffer[2048];
         printf("Enter the support to the question: ");
-        scanf(" %s", support_buffer);
-        strncpy(question->support, support_buffer, 2048);
+        fgets(support_buffer, 2048, stdin);
+        question->support = malloc(sizeof(char)*(strlen(support_buffer) + 1));
+        if (question->support == NULL) {
+            exit(EXIT_FAILURE);
+        }
+        strncpy(question->support, support_buffer, strlen(support_buffer) + 1);
 
         char valid_answers_buffer[512];
         printf("Enter the possible answers to the question (separated by a comma): ");
-        scanf(" %s", valid_answers_buffer);
+        fgets(valid_answers_buffer, 512, stdin);
         size_t number_of_valid_answers;
         question->valid_answers = __parse_string(valid_answers_buffer, &number_of_valid_answers);
         question->number_of_valid_answers = number_of_valid_answers;
+
+        insert_question(DATABASE_PATH, question, number_of_valid_answers);
 
         return 0;
     }
