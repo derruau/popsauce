@@ -101,13 +101,18 @@ ResponseCode lobby_enqueue(int lobby_id, LobbyMessageQueue kind, Message *m, int
 
 MessageQueueItem *lobby_dequeue(int lobby_id, LobbyMessageQueue kind);
 
+// Returns 1 when message queue is empty and 0 when it's not.
+// Returns -1 when lobby doesn't exist
 int lobby_mq_is_empty(int lobby_id, LobbyMessageQueue kind);
+
+// Returns 1 when message queue is full and 0 when it's not.
+// Returns -1 when lobby doesn't exist
+int lobby_mq_is_full(int lobby_id, LobbyMessageQueue kind);
 
 // Creates a player and returns the MessageQueue corresponding to this player.
 // Use errno for error detection.
 ResponseCode create_player(int player_socket, int player_id, char *username);
 
-// TODO
 ResponseCode delete_player(int player_id, Message **player_quit);
 
 // Returns the lobby's id in lobby_id if successfully created
@@ -121,15 +126,17 @@ ResponseCode quit_lobby(int player_id, Message **player_quit);
 // Returns the PlayerJoined message in player_joined
 ResponseCode join_lobby(int player_id, int lobby_id, Message **player_joined);
 
-ResponseCode start_game(int player_id, int lobby_id, Message **game_starts);
+ResponseCode start_game(int player_id, int lobby_id);
 
 ResponseCode get_lobby_list(Message **lobbylist);
 
 ResponseCode get_players_data(int lobby_id, Message **playersdata);
 
+ResponseCode set_lobby_send_thread(int lobby_id, pthread_t *thread);
+
 // Returns 0 when you can't submit answers
 // Returns 1 when you can
-int can_submit_answers(int lobby_id);
+int can_submit_answers(int lobby_id, int player_id);
 
 // J'ai besoin d'envoyer des données entre ce thread (2) et le thread principal (1)
 // de (2) vers (1): Je dois envoyer: GAME_STARTS, QUESTION_SENT, ANSWER_SENT et GAME_ENDED, PLAYER_RESPONSE_CHANGED => que des broadcast

@@ -35,13 +35,14 @@ Usage:
 
 #include "game_logic.h"
 #include "message_queue.h"
+#include "questions.h"
 #include "common.h"
 
-// TODO: deplacer dans le fichier de config
-#define PORT "7677" // PSQ ça fait 'POPS' sur un clavier de téléphone 3x3
+#define PORT "7677" // Because it writes POPS on a 3x3 phone keyboard
 
 int listen_socket;
 pthread_t  client_threads[MAX_NUMBER_OF_PLAYERS] = {0};
+pthread_t send_threads[MAX_NUMBER_OF_LOBBIES] = {0};
 int available_client_threads[MAX_NUMBER_OF_PLAYERS] = {0};
 
 volatile int server_online = 1;
@@ -278,6 +279,11 @@ void *handle_client_thread(void *arg) {
 
             response = responsecode_to_message(rc, SERVER_UUID, lobby_id);
 
+            if (rc == RC_SUCCESS) {
+                pthread_create(&send_threads[lobby_id], NULL, handle_server_broadcast, (void*)&lobby_id);
+                set_lobby_send_thread(lobby_id, &send_threads[lobby_id]);
+            }
+
             // Cannot recover from this error, crashes the server.
             if (errno != 0) exit(EXIT_FAILURE);
 
@@ -317,24 +323,29 @@ void *handle_client_thread(void *arg) {
         case START_GAME:
             Message *gamestarts;
             int lobby_id = get_lobby_of_player(m->uuid);
-            rc = start_game(m->uuid, lobby_id, &gamestarts);
+            rc = start_game(m->uuid, lobby_id);
+            // The response is queued by game_loop()
 
+            // TODO: remove
             if (rc != RC_SUCCESS) {
                 free_message(gamestarts);
                 response = responsecode_to_message(rc, SERVER_UUID, rc);
                 safe_send_message(a->socket, response);
                 break;
             }
-
-            lobby_enqueue(lobby_id, SEND_QUEUE, gamestarts, NULL);
             break;
         case CHANGE_RULES:
             //TODO:
             break;
         case SEND_RESPONSE:
             int lobby_id = get_lobby_of_player(m->uuid);
+                        
+            if (!can_submit_answers(lobby_id, m->uuid)) {
+                response = responsecode_to_message(EC_CANNOT_SUBMIT, SERVER_UUID, EC_CANNOT_SUBMIT);
+                safe_send_message(a->socket, response);
+            }
+
             lobby_enqueue(lobby_id, RECEIVE_QUEUE, m, a->socket);
-            // The response is queued by game_loop()
             break;
         default:
             //TODO
@@ -352,9 +363,57 @@ void *handle_client_thread(void *arg) {
     pthread_exit(NULL);
 }
 
-// TODO: Instancier les handle_server_broadcast
+void print_help() {
+    printf(
+        "POPSAUCE-SERVER - Usage:\n"
+        "   - ./popsauce-server: starts the server\n"
+        "   - ./popsauce-server add [txt/img]: adds a new question to the database.\n"
+        "             This command starts a menu to add a question.\n"
+        "             'txt' for text style support and 'img' for image format support.\n"
+        "             IMPORTANT: 'img' doesn't work for now!\n"
+        "\n"
+        "More options incoming..."
+    );
+}
+
 int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        print_help();
+    }
+
+    if ( (argc == 3) && (strcmp(argv[1], "add") == 0)) {
+        SupportType support_type = STRING;
+        if (strcmp(argv[2], "img") == 0) support_type = BITMAP;
+
+        Question *question = (Question*)malloc(sizeof(Question));
+        if (question == NULL) {
+            exit(EXIT_FAILURE);
+        }
+
+        
+        question->support_type = support_type;
+        printf("Enter the question: ");
+        scanf(" %s", &question);
+
+        // Normally, this should be of size MAX_PAYLOAD_LENGTH
+        char support_buffer[2048];
+        printf("Enter the support to the question: ");
+        scanf(" %s", &support_buffer);
+        strncpy(question->support, support_buffer, 2048);
+
+        char valid_answers_buffer[512];
+        printf("Enter the possible answers to the question (separated by a comma): ");
+        scanf(" %s", &valid_answers_buffer);
+        size_t number_of_valid_answers;
+        question->valid_answers = __parse_string(valid_answers_buffer, &number_of_valid_answers);
+        question->number_of_valid_answers = number_of_valid_answers;
+
+        return 0;
+    }
+
     struct sockaddr_in client_socket;
+
+    init_database(DATABASE_PATH);
 
     int listen_fd = server_listen(PORT);
 
@@ -364,16 +423,16 @@ int main(int argc, char *argv[]) {
         unsigned int client_socket_size = sizeof(client_socket);
         int socket = accept(listen_fd, &client_socket, &client_socket_size);
         if (socket < 0) {
-            // TODO: impossible de se connecter au client
+            continue;
         };
 
         int available_thread = getavailable_client_threads();
         if (available_thread == -1) {
-            printf("[ERREUR]: Impossible d'accepter une connection supplémentaire, le serveur est plein!\n");
+            printf("[ERROR]: Cannot accept another connection: server full!\n");
             continue;
         }
 
-        printf("[INFO]: Nouvelle connection %s:%hu assigné à l'ID: %i\n",
+        printf("[INFO]: New connection %s:%hu assignated to thread ID: %i\n",
             stringIP(ntohl(client_socket.sin_addr.s_addr)),
             ntohs(client_socket.sin_port),
             available_thread
@@ -385,20 +444,21 @@ int main(int argc, char *argv[]) {
 
         int ret = pthread_create(&client_threads[available_thread], NULL, handle_client_thread, arg);
         if (ret != 0) {
-            printf("[ERREUR]: Impossible de créer le thread pour la communication avec l'IP: %s", stringIP(ntohl(client_socket.sin_addr.s_addr)));
+            printf("[ERROR]: Cannot create client thread for IP: %s", stringIP(ntohl(client_socket.sin_addr.s_addr)));
         }
 
         available_client_threads[available_thread] = 1;
 
     }
 
-    printf("[SERVEUR]: Arret du serveur...\n");
+    printf("[SERVER]: Server Stopping...\n");    
     // On ferme bien toutes les connections avant de fermer le serveur
     for (int i=0; i < MAX_NUMBER_OF_PLAYERS; i++) {
         if (available_client_threads[i] != 0) {
             pthread_join(client_threads[available_client_threads[i]], NULL);
         }
     }
+
 
     close(listen_socket);
 

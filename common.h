@@ -9,13 +9,20 @@
 #include <arpa/inet.h>
 
 // TODO: Have coherent values for those constants 
-#define MAX_USERNAME_LENGTH     32
-#define MAX_RESPONSE_LENGTH     64
-#define MAX_LOBBY_LENGTH        64
-#define MAX_QUESTION_LENGTH     128
-#define MAX_NUMBER_OF_LOBBIES   16
-#define READBUFFER_LENGTH       16
-#define MAX_NUMBER_OF_PLAYERS   64
+#define MAX_USERNAME_LENGTH         32
+#define MAX_RESPONSE_LENGTH         64
+#define MAX_LOBBY_LENGTH            64 // The name is really bad but it's the maximum length of the name of a lobby
+#define MAX_QUESTION_LENGTH         128
+#define MAX_NUMBER_OF_LOBBIES       16
+#define MAX_NUMBER_OF_PLAYERS       64
+
+#define TIME_BEFORE_GAME_STARTS     5 // (in seconds)
+#define TIME_TO_ANSWER              20 // (in seconds)
+#define TIME_INBETWEEN_QUESTIONS    5 // (in seconds)
+
+#define POINTS_TO_WIN               100
+
+#define DATABASE_PATH               "questions_db.sqlite"
 
 #define MAX_PAYLOAD_LENGTH      1024 * 1024 // 1MB Limit
 

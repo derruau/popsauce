@@ -57,7 +57,7 @@ void mq_enqueue(MessageQueue* mq, Message *m, int socket) {
 }
 
 MessageQueueItem *mq_dequeue(MessageQueue* mq) {
-    if (mq_is_empty(mq)) return;
+    if (mq_is_empty(mq)) return NULL;
     
     MessageQueueItem *mqi = mq->items[mq->front + 1];
     

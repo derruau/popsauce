@@ -11,6 +11,7 @@ typedef struct {
     char question[MAX_QUESTION_LENGTH];
     SupportType support_type;
     char *support;
+    int number_of_valid_answers;
     char **valid_answers;
 } Question;
 
@@ -26,7 +27,7 @@ char *__trim(char *str) {
     return strdup(str);
 }
 
-char **__parse_string(char *string) {
+char **__parse_string(char *string, size_t *number_of_valid_answers) {
     if (!string) return NULL;
 
     // Estimate max number of tokens (worst case: every char is a token)
@@ -47,6 +48,7 @@ char **__parse_string(char *string) {
     }
 
     result[idx] = NULL; // Null-terminate the array
+    *number_of_valid_answers = idx;
     return result;
 }
 
@@ -299,11 +301,13 @@ int get_random_questions(sqlite3 *db, int lobby_id, int n, Question **out_questi
         const unsigned char *support = sqlite3_column_text(stmt, 3);
         const unsigned char *valid_answers_str = sqlite3_column_text(stmt, 4);
 
+        size_t number_of_valid_answers;
         strncpy(questions[count].question, (const char *)qtext, MAX_QUESTION_LENGTH - 1);
         questions[count].question[MAX_QUESTION_LENGTH - 1] = '\0'; // Ensure null-termination
         questions[count].support_type = (SupportType)support_type;
         questions[count].support = support ? strdup((const char *)support) : NULL;
-        questions[count].valid_answers = __parse_string((char *)valid_answers_str);
+        questions[count].valid_answers = __parse_string((char *)valid_answers_str, &number_of_valid_answers);
+        questions[count].number_of_valid_answers = number_of_valid_answers;
 
         // Insert this question ID into the lobby table
         char insert_query[128];

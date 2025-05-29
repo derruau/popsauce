@@ -14,13 +14,14 @@ typedef struct {
     char question[MAX_QUESTION_LENGTH];
     SupportType support_type;
     char *support;
+    int number_of_valid_answers;
     char **valid_answers;
 } Question;
 
 // Helper to trim leading/trailing spaces
 char *__trim(char *str);
 
-char **__parse_string(char *string);
+char **__parse_string(char *string, size_t *number_of_valid_answers);
 
 // Convert accented Latin characters to ASCII equivalents
 char __replace_accent(unsigned char c);
