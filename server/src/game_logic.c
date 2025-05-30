@@ -731,7 +731,7 @@ void *game_loop(void *args) {
 
     // sleep time before game starts
     Question *questions;
-    get_random_questions(DATABASE_PATH, lobby_id, 20, &questions);
+    int retrived_questions = get_random_questions(DATABASE_PATH, lobby_id, QUESTIONS_TO_RETRIEVE, &questions);
     sleep(TIME_BEFORE_GAME_STARTS);
 
     int max_pts = 0;
@@ -740,7 +740,33 @@ void *game_loop(void *args) {
     int number_of_correct_answer = 0;
     time_t first_correct_answer;
     while (max_pts < POINTS_TO_WIN) {
-        // TODO: if questions_asked >= 20 on get_random_questions
+        if (questions_asked >= retrived_questions) {
+            for (int i = 0; i < retrived_questions; i++) {
+                free(questions->support);
+                for (int j = 0; j < questions->number_of_valid_answers; j++) {
+                    free(questions->valid_answers[j]);
+                }
+                free(questions);
+            }
+
+            questions_asked = 0;
+            retrived_questions = get_random_questions(DATABASE_PATH, lobby_id, QUESTIONS_TO_RETRIEVE, &questions);
+
+            // If we don't have anymore questions in the db:
+            if (retrived_questions == 0) {
+                // Updating the person with the most score
+                for (int i = 0; i < l->max_players; i++) {
+                    if (l->players[i] == NULL) continue;
+                    if (l->player_points[i] > max_pts) {
+                        max_pts = l->player_points[i];
+                        winner_public_id = l->players[i]->public_player_id;
+                    }
+                }
+                // Ending the game
+                break;
+            }
+        }
+
 
         QuestionSent *qs = (QuestionSent*)malloc(sizeof(QuestionSent));
         strncpy(qs->question, questions[questions_asked].question, MAX_QUESTION_LENGTH);
@@ -780,7 +806,7 @@ void *game_loop(void *args) {
             for (int i = 0; i < questions[questions_asked].number_of_valid_answers; i++) {
                 *trimmed = __trim(answersent->answer);
                 // If answer correct
-                if (strcmp(trimmed, questions[questions_asked].valid_answers[i]) == 0) {
+                if (strcmp(__sanitize_token(trimmed), questions[questions_asked].valid_answers[i]) == 0) {
                     is_correct = 1;
                     if (number_of_correct_answer == 0) {
                         int player_space = get_player_space_from_id(mqi->m->uuid);
@@ -853,6 +879,8 @@ void *game_loop(void *args) {
                 winner_public_id = l->players[i]->public_player_id;
             }
         }
+
+        questions_asked++;
     }
 
     GameEnded *ge = (GameEnded*)malloc(sizeof(GameEnded));

@@ -9,7 +9,8 @@
 #include "message_queue.h"
 #include "questions.h"
 
-#define NO_SOCKET -1
+#define NO_SOCKET               -1
+#define QUESTIONS_TO_RETRIEVE   20
 
 typedef enum {
     PS_CONNECTED_TO_SERVER,
