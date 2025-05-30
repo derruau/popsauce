@@ -71,6 +71,16 @@ extern pthread_mutex_t lobbies_mutex[MAX_NUMBER_OF_LOBBIES]; // TODO: implement 
 extern Player *players[MAX_NUMBER_OF_PLAYERS];
 extern pthread_mutex_t players_mutex[MAX_NUMBER_OF_PLAYERS]; // TODO: implement that
 
+void init_mutexes();
+
+void lock_all_lobbies();
+
+void lock_all_players();
+
+void unlock_all_lobbies();
+
+void unlock_all_players();
+
 // Gets the first available lobby space,
 // returns -1 if no space was found
 int get_available_lobby_space();

@@ -7,53 +7,115 @@ TODO: To avoid repeating questions, we need to select unique questions each time
 #include "game_logic.h"
 
 Lobby *lobbies[MAX_NUMBER_OF_LOBBIES];
-pthread_mutex_t lobbies_mutex[MAX_NUMBER_OF_LOBBIES]; // TODO: implement that
+pthread_mutex_t lobbies_mutex[MAX_NUMBER_OF_LOBBIES];
 Player *players[MAX_NUMBER_OF_PLAYERS];
-pthread_mutex_t players_mutex[MAX_NUMBER_OF_PLAYERS]; // TODO: implement that
+pthread_mutex_t players_mutex[MAX_NUMBER_OF_PLAYERS];
+
+void init_mutexes() {
+    for (int i = 0; i < MAX_NUMBER_OF_LOBBIES; i++) {
+        pthread_mutex_init(&lobbies_mutex[i], NULL);
+    }
+
+    for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
+        pthread_mutex_init(&players_mutex[i], NULL);
+    }
+}
+
+void lock_all_lobbies() {
+    for (int i = 0; i < MAX_NUMBER_OF_LOBBIES; i++) {
+        pthread_mutex_lock(&lobbies_mutex[i]);
+    }
+}
+
+void lock_all_players() {
+    for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
+        pthread_mutex_lock(&players_mutex[i]);
+    }
+}
+
+void unlock_all_lobbies() {
+    for (int i = 0; i < MAX_NUMBER_OF_LOBBIES; i++) {
+        pthread_mutex_unlock(&lobbies_mutex[i]);
+    }
+}
+
+void unlock_all_players() {
+    for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
+        pthread_mutex_unlock(&players_mutex[i]);
+    }
+}
+
 
 // Gets the first available lobby space,
 // returns -1 if no space was found
 int get_available_lobby_space() {
+    lock_all_lobbies();
     for (int i  = 0; i < MAX_NUMBER_OF_LOBBIES; i++) {
-        if (lobbies[i] == NULL) return i;
+        if (lobbies[i] == NULL) {
+            unlock_all_lobbies();
+            return i;
+        }
     }
+    unlock_all_lobbies();
     return -1;
 }
 
 // Gets the first available player space,
 // returns -1 if no space was found
 int get_available_player_space() {
+    lock_all_players();
     for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
-        if (players[i] == NULL) return i;
+        if (players[i] == NULL) {
+            unlock_all_players();
+            return i;
+        }
     }
+    unlock_all_players();
     return -1;
 }
 
 // Returns a player's space from his id
 // returns -1 if player doesn't exist
 int get_player_space_from_id(int player_id) {
+    lock_all_players();
     for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
-        if (players[i]->player_id == player_id) return i;
+        if (players[i]->player_id == player_id) {
+            unlock_all_players();
+            return i;
+        }
     }
+    unlock_all_players();
     return -1;
 }
 
 // Returns a player's id from his socket
 // returns -1 if player doesn't exist
 int get_player_id_from_socket(int socket) {
+    lock_all_players();
     for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
-        if (players[i]->socket == socket) return players[i]->player_id;
+        if (players[i]->socket == socket) {
+            unlock_all_players();
+            return players[i]->player_id;
+        }
     }
+    unlock_all_players();
     return -1;   
 }
 
 // returns an available public_id for a specific lobby
 // returns -1 if none is found
 int get_available_public_id(int lobby_id) {
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
+
     Lobby *l = lobbies[lobby_id];
     for (int i = 0; i < l->max_players; i++) {
-        if (l->players[i] == NULL) return i;
+        if (l->players[i] == NULL) {
+            pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+            return i;
+        }
     }
+
+    pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
     return -1;
 }
 
@@ -62,10 +124,13 @@ int get_available_public_id(int lobby_id) {
 // the player doesn't exit
 int get_lobby_of_player(int player_id) {
     int player_space = get_player_space_from_id(player_id);
-
     if (player_space == -1) return -1;
 
-    return players[player_space]->lobby_id;
+    pthread_mutex_lock(&players_mutex[player_space]);
+    int ret = players[player_space]->lobby_id;
+    pthread_mutex_unlock(&players_mutex[player_space]);
+
+    return ret;
 }
 
 Player **get_players_from_lobby(int lobby_id, int *players_in_lobby) {
@@ -80,12 +145,20 @@ MessageQueue *get_message_queue_of_lobby(int lobby_id, LobbyMessageQueue queue) 
     if ( (lobby_id < 0) || (lobby_id >= MAX_NUMBER_OF_LOBBIES)) return NULL;
     if (lobbies[lobby_id] == NULL) return NULL;
 
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
+
+    MessageQueue *ret;
     switch (queue) {
     case RECEIVE_QUEUE:
-        return lobbies[lobby_id]->receive_queue;
+        ret = lobbies[lobby_id]->receive_queue;
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return ret;
     case SEND_QUEUE:
-        return lobbies[lobby_id]->send_queue;
+        ret = lobbies[lobby_id]->send_queue;
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return ret;
     default:
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
         return NULL;
     }
 }
@@ -94,7 +167,9 @@ ResponseCode set_lobby_send_thread(int lobby_id, pthread_t *thread) {
     if ( (lobby_id < 0) || (lobby_id >= MAX_NUMBER_OF_LOBBIES)) return EC_LOBBY_DOESNT_EXIST;
     if (lobbies[lobby_id] == NULL) return EC_LOBBY_DOESNT_EXIST;
 
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
     lobbies[lobby_id]->send_thread = thread;
+    pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
 
     return RC_SUCCESS;
 }
@@ -104,7 +179,9 @@ ResponseCode lobby_enqueue(int lobby_id, LobbyMessageQueue kind, Message *m, int
     if (lobbies[lobby_id] == NULL) return EC_LOBBY_DOESNT_EXIST;
 
     Lobby *l = lobbies[lobby_id];
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
 
+    
     switch (kind) {
     case RECEIVE_QUEUE:
         mq_enqueue(l->receive_queue, m, socket);
@@ -113,9 +190,11 @@ ResponseCode lobby_enqueue(int lobby_id, LobbyMessageQueue kind, Message *m, int
         mq_enqueue(l->send_queue, m, socket);
         break;
     default:
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
         return EC_INTERNAL_ERROR;
     }
 
+    pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
     return RC_SUCCESS;
 }
 
@@ -124,13 +203,20 @@ MessageQueueItem *lobby_dequeue(int lobby_id, LobbyMessageQueue kind) {
     if (lobbies[lobby_id] == NULL) return NULL;
 
     Lobby *l = lobbies[lobby_id];
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
 
+    MessageQueueItem *mqi;
     switch (kind) {
     case RECEIVE_QUEUE:
-        return mq_dequeue(l->receive_queue);
+        mqi = mq_dequeue(l->receive_queue);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return mqi;
     case SEND_QUEUE:
-        return mq_dequeue(l->send_queue);
+        mqi = mq_dequeue(l->send_queue);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return mqi;
     default:
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
         return NULL;
     }
 }
@@ -142,13 +228,20 @@ int lobby_mq_is_empty(int lobby_id, LobbyMessageQueue kind) {
     if (lobbies[lobby_id] == NULL) return -1;
 
     Lobby *l = lobbies[lobby_id];
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
 
+    int is_empty;
     switch (kind) {
         case RECEIVE_QUEUE:
-            return mq_is_empty(l->receive_queue);
+            is_empty = mq_is_empty(l->receive_queue);
+            pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+            return is_empty;
         case SEND_QUEUE:
-            return mq_is_empty(l->send_queue);
+            is_empty = mq_is_empty(l->send_queue);
+            pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+            return is_empty;
         default:
+            pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
             return -1;
         }
 }
@@ -161,12 +254,21 @@ int lobby_mq_is_full(int lobby_id, LobbyMessageQueue kind) {
 
     Lobby *l = lobbies[lobby_id];
 
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
+
+
+    int is_full;
     switch (kind) {
         case RECEIVE_QUEUE:
-            return mq_is_full(l->receive_queue);
+            is_full = mq_is_full(l->receive_queue);
+            pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+            return is_full;
         case SEND_QUEUE:
-            return mq_is_full(l->send_queue);
+            is_full = mq_is_full(l->send_queue);
+            pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+            return is_full;
         default:
+            pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
             return -1;
         }
 }
@@ -176,10 +278,22 @@ ResponseCode create_player(int player_socket, int player_id, char *username) {
     if (get_player_space_from_id(player_id) != -1) return EC_PLAYER_UUID_EXISTS;
 
     int player_space = get_available_player_space();
-    if (player_space == -1) return EC_TOO_MANY_PLAYERS;
+    pthread_mutex_lock(&players_mutex[player_space]);
+    if (player_space == -1) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        return EC_TOO_MANY_PLAYERS;
+    }
+    if (players[player_space] != NULL) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        return EC_PLAYER_UUID_EXISTS;
+    }
+
 
     Player *p = (Player*)malloc(sizeof(Player));
-    if (p == NULL) return EC_INTERNAL_ERROR;
+    if (p == NULL) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        return EC_INTERNAL_ERROR;
+    }
 
     p->socket = player_socket;
     p->player_id = player_id;
@@ -190,6 +304,7 @@ ResponseCode create_player(int player_socket, int player_id, char *username) {
 
     players[player_space] = p;
 
+    pthread_mutex_unlock(&players_mutex[player_space]);
     return RC_SUCCESS;
 }
 
@@ -197,16 +312,22 @@ ResponseCode delete_player(int player_id, Message **player_quit) {
     int player_space = get_player_space_from_id(player_id);
     if (player_space != -1) return 1;
 
+    pthread_mutex_lock(&players_mutex[player_space]);
+
     Player *p = players[player_space];
 
     if (p->lobby_id >= 0) {
         ResponseCode rc = quit_lobby(player_id, player_quit);
 
-        if (rc != RC_SUCCESS) return rc;
+        if (rc != RC_SUCCESS) {
+            pthread_mutex_unlock(&players_mutex[player_space]);
+            return rc;
+        }
     }
 
     free(p);
     
+    pthread_mutex_unlock(&players_mutex[player_space]);
     return RC_SUCCESS;
 }
 
@@ -218,15 +339,23 @@ ResponseCode create_lobby(char *name, int max_players, int owner_id, int *lobby_
 
     if (lobby_space == -1) return EC_TOO_MANY_LOBBIES;
 
+    pthread_mutex_lock(&lobbies_mutex[lobby_space]);
+
     Lobby *lobby = (Lobby*)malloc(sizeof(Lobby));
 
-    if (lobby == NULL) return EC_INTERNAL_ERROR;
+    if (lobby == NULL) {
+        pthread_mutex_unlock(&lobbies_mutex[lobby_space]);
+        return EC_INTERNAL_ERROR;
+    }
 
     lobby->lobby_id = lobby_space;
     lobby->max_players = max_players;
     lobby->private = 0; // Unused
    
-    if (strlen(name) > MAX_LOBBY_LENGTH) return EC_CANNOT_CREATE_LOBBY;
+    if (strlen(name) > MAX_LOBBY_LENGTH) {
+        pthread_mutex_unlock(&lobbies_mutex[lobby_space]);
+        return EC_CANNOT_CREATE_LOBBY;
+    }
     strncpy(lobby->name, name, MAX_LOBBY_LENGTH);
 
     lobby->owner_id = owner_id;
@@ -239,6 +368,7 @@ ResponseCode create_lobby(char *name, int max_players, int owner_id, int *lobby_
         free(lobby->players);
         free(lobby->player_points);
         free(lobby);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_space]);
         return EC_INTERNAL_ERROR;
     }
 
@@ -249,6 +379,7 @@ ResponseCode create_lobby(char *name, int max_players, int owner_id, int *lobby_
         free(lobby->players);
         free(lobby->player_points);
         free(lobby);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_space]);
         return EC_INTERNAL_ERROR;
     }
 
@@ -261,6 +392,8 @@ ResponseCode create_lobby(char *name, int max_players, int owner_id, int *lobby_
     create_lobby_table(DATABASE_PATH, lobby->lobby_id);
 
     *lobby_id = lobby->lobby_id;
+    
+    pthread_mutex_unlock(&lobbies_mutex[lobby_space]);
     return RC_SUCCESS;
 }
 
@@ -268,6 +401,8 @@ ResponseCode create_lobby(char *name, int max_players, int owner_id, int *lobby_
 ResponseCode delete_lobby(int lobby_id) {
     Lobby *l = lobbies[lobby_id];
     if (l->players_in_lobby > 0) return EC_CANNOT_DELETE_LOBBY;
+
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
 
     pthread_cancel(*l->game_thread);
     pthread_join(*l->game_thread, NULL);
@@ -280,6 +415,8 @@ ResponseCode delete_lobby(int lobby_id) {
     free(l->player_points);
     free(l);
 
+    pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+
     return RC_SUCCESS;
 }
 
@@ -288,10 +425,18 @@ ResponseCode quit_lobby(int player_id, Message **player_quit) {
     int player_space = get_player_space_from_id(player_id);
     if (player_space == -1) return EC_INTERNAL_ERROR;
 
+    
     Player *p = players[player_space];
     Lobby *l = lobbies[p->lobby_id];
 
-    if (p->lobby_id < 0) return RC_SUCCESS;
+    pthread_mutex_lock(&lobbies_mutex[p->lobby_id]);
+    pthread_mutex_lock(&players_mutex[player_space]);
+    
+    if (p->lobby_id < 0) {
+        pthread_mutex_unlock(&lobbies_mutex[p->lobby_id]);
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        return RC_SUCCESS;
+    }
 
     // Updates the local lobby & player definition
     l->players_in_lobby--;
@@ -314,19 +459,32 @@ ResponseCode quit_lobby(int player_id, Message **player_quit) {
 
         // If the owner couldn't be changed, then there are no more players
         // in the lobby and it has to be deleted
+        pthread_mutex_lock(&lobbies_mutex[p->lobby_id]);
+        pthread_mutex_lock(&players_mutex[player_space]);
         if (!changed) delete_lobby(l->lobby_id);
     }
 
     // Creates the message to broadcast to everyone else
     PlayerQuit *playerquit = (PlayerQuit*)malloc(sizeof(PlayerQuit));
-    if (player_quit == NULL) return EC_INTERNAL_ERROR;
+    if (player_quit == NULL) {
+        pthread_mutex_lock(&lobbies_mutex[p->lobby_id]);
+        pthread_mutex_lock(&players_mutex[player_space]);
+        return EC_INTERNAL_ERROR;
+    }
 
     playerquit->player_id = p->public_player_id;
 
     Message *m = payload_to_message(PLAYER_QUIT, playerquit, SERVER_UUID);
-    if (m == NULL) return EC_INTERNAL_ERROR;
+    if (m == NULL) {
+        pthread_mutex_lock(&lobbies_mutex[p->lobby_id]);
+        pthread_mutex_lock(&players_mutex[player_space]);
+        return EC_INTERNAL_ERROR;
+    }
 
     *player_quit = m;
+
+    pthread_mutex_lock(&lobbies_mutex[p->lobby_id]);
+    pthread_mutex_lock(&players_mutex[player_space]);
 
     return RC_SUCCESS;
 }
@@ -336,21 +494,40 @@ ResponseCode join_lobby(int player_id, int lobby_id, Message **player_joined) {
     int player_space = get_player_space_from_id(player_id);
 
     Player *p = players[player_space];
-    Lobby *l = lobbies[lobby_id];
-
+    
     if ( (lobby_id < 0) || (lobby_id >= MAX_NUMBER_OF_LOBBIES)) return EC_LOBBY_DOESNT_EXIST;
+    Lobby *l = lobbies[lobby_id];
     if (player_space == -1) return EC_INTERNAL_ERROR;
 
-    if (p->lobby_id >= 0) return EC_ALREADY_IN_LOBBY; 
+    pthread_mutex_lock(&players_mutex[player_space]);
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
 
-    if (l->players_in_lobby >= l->max_players) return EC_LOBBY_FULL;
+    if (p->lobby_id >= 0) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_ALREADY_IN_LOBBY;
+    }
 
-    if (l->state != GS_WAITING_ROOM) return EC_GAME_ALREADY_STARTED;
+    if (l->players_in_lobby >= l->max_players) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_LOBBY_FULL;
+    }
+
+    if (l->state != GS_WAITING_ROOM) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_GAME_ALREADY_STARTED;
+    }
 
     int public_id = get_available_public_id(lobby_id);
     // We already checked that there is enough room for another player, so this case is
     // an internal error
-    if (public_id < 0) return EC_INTERNAL_ERROR;
+    if (public_id < 0) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_INTERNAL_ERROR;
+    }
 
     // Updates the local lobby & player definition
     p->public_player_id = public_id;
@@ -368,9 +545,17 @@ ResponseCode join_lobby(int player_id, int lobby_id, Message **player_joined) {
     pjoined->player_id = public_id;
 
     Message *m = payload_to_message(PLAYER_JOINED, pjoined, SERVER_UUID);
-    if (m == NULL) return EC_INTERNAL_ERROR;
+    if (m == NULL) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_INTERNAL_ERROR;
+    }
 
     *player_joined = m;
+
+    pthread_mutex_unlock(&players_mutex[player_space]);
+    pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+
     return RC_SUCCESS;
 }
 
@@ -380,9 +565,27 @@ ResponseCode start_game(int player_id, int lobby_id) {
 
     Lobby *l = lobbies[lobby_id];
 
-    if (l->owner_id != player_id ) return EC_INSUFFICIENT_PERMISSION;
-    if (l->state != GS_WAITING_ROOM) return EC_GAME_ALREADY_STARTED;
-    if (l->players_in_lobby < 2) return EC_NOT_ENOUGH_PLAYERS;
+    int player_space = get_player_space_from_id(player_id);
+    if (player_space == -1) return EC_INTERNAL_ERROR;
+
+    pthread_mutex_lock(&players_mutex[player_space]);
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
+
+    if (l->owner_id != player_id ) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_INSUFFICIENT_PERMISSION;
+    }
+    if (l->state != GS_WAITING_ROOM) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_GAME_ALREADY_STARTED;
+    }
+    if (l->players_in_lobby < 2) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_NOT_ENOUGH_PLAYERS;
+    }
 
     pthread_create(l->game_thread, NULL, game_loop, &l);
 
@@ -390,6 +593,9 @@ ResponseCode start_game(int player_id, int lobby_id) {
     if (game_starts == NULL) {
         pthread_cancel(*l->game_thread);
         pthread_join(*l->game_thread, NULL);
+
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
         return EC_INTERNAL_ERROR;
     }
 
@@ -400,18 +606,26 @@ ResponseCode start_game(int player_id, int lobby_id) {
 
     ResponseCode rc = lobby_enqueue(lobby_id, SEND_QUEUE, game_starts, NO_SOCKET);
 
-    if (rc != RC_SUCCESS) return EC_INTERNAL_ERROR;
+    if (rc != RC_SUCCESS) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+        return EC_INTERNAL_ERROR;
+    }
+
+    pthread_mutex_unlock(&players_mutex[player_space]);
+    pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
 
     return RC_SUCCESS;
 }
 
 ResponseCode get_lobby_list(Message **lobbylist) {
     LobbyList *ll = (LobbyList*)malloc(sizeof(LobbyList));
-
+    
     if (ll == NULL) {
         return EC_INTERNAL_ERROR;
     }
-
+    
+    lock_all_lobbies();
     int cnt = 0;
     for (int i = 0; i < MAX_NUMBER_OF_LOBBIES; i++) {
         if (lobbies[i] == NULL) continue;
@@ -420,6 +634,7 @@ ResponseCode get_lobby_list(Message **lobbylist) {
         strncpy(ll->names[cnt], lobbies[i]->name, MAX_LOBBY_LENGTH);
         cnt++;
     }
+    unlock_all_lobbies();
 
     ll->__quantity = cnt;
 
@@ -434,10 +649,14 @@ ResponseCode get_players_data(int lobby_id, Message **playersdata) {
     if ( (lobby_id < 0) || (lobby_id >= MAX_NUMBER_OF_LOBBIES)) return EC_LOBBY_DOESNT_EXIST;
     if (lobbies[lobby_id] == NULL) return EC_LOBBY_DOESNT_EXIST;
 
+    
     Lobby *l = lobbies[lobby_id];
     PlayersData *pdata = (PlayersData*)malloc(sizeof(PlayersData));
 
     if (pdata == NULL) return EC_INTERNAL_ERROR;
+
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
+    lock_all_players();
 
     pdata->number_of_players = l->players_in_lobby;
     pdata->player_names = malloc(sizeof(char)*MAX_USERNAME_LENGTH*l->players_in_lobby);
@@ -449,6 +668,8 @@ ResponseCode get_players_data(int lobby_id, Message **playersdata) {
         free(pdata->player_points);
         free(pdata->players_id);
         free(pdata);
+        unlock_all_players();
+        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
         return EC_INTERNAL_ERROR;
     }
 
@@ -462,6 +683,9 @@ ResponseCode get_players_data(int lobby_id, Message **playersdata) {
     } 
 
     *playersdata = payload_to_message(PLAYERS_DATA, pdata, SERVER_UUID);
+
+    unlock_all_players();
+    pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
 
     return RC_SUCCESS;
 }
@@ -478,7 +702,13 @@ int can_submit_answers(int lobby_id, int player_id) {
     Lobby *l = lobbies[lobby_id];
     Player *p = players[player_space];
 
-    return (l->state == GS_QUESTION) && (p->state == PS_IN_GAME_NOT_ANSWERED);
+    pthread_mutex_lock(&players_mutex[player_space]);
+    pthread_mutex_lock(&lobbies_mutex[lobby_id]);
+    int ret = (l->state == GS_QUESTION) && (p->state == PS_IN_GAME_NOT_ANSWERED);
+    pthread_mutex_unlock(&players_mutex[player_space]);
+    pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+
+    return ret;
 }
 
 // J'ai besoin d'envoyer des données entre ce thread (2) et le thread principal (1)
@@ -529,6 +759,8 @@ void *game_loop(void *args) {
         }
         time_t question_started = time(NULL);
 
+        l->state = GS_QUESTION;
+
         MessageQueueItem *mqi = lobby_dequeue(lobby_id, RECEIVE_QUEUE);
         time_t message_time = mqi == NULL ? time(NULL): mqi->time;
         while ((message_time - question_started <= TIME_TO_ANSWER) && (lobby_mq_is_empty(lobby_id, RECEIVE_QUEUE) != 1)) {
@@ -552,15 +784,19 @@ void *game_loop(void *args) {
                         l->player_points[public_id] += 10;
                         first_correct_answer = mqi->time;
                         number_of_correct_answer++;
+
+                        players[player_space]->state = PS_IN_GAME_ANSWERED;
                         
                         free(trimmed);
                         break;
                     } 
                     int player_space = get_player_space_from_id(mqi->m->uuid);
                     int public_id = players[player_space]->public_player_id;
-
+                    
                     l->player_points[public_id] += 10 - (mqi->time - first_correct_answer) < 1 ? 1 : 10 - (mqi->time - first_correct_answer);
                     number_of_correct_answer++;
+                    
+                    players[player_space]->state = PS_IN_GAME_ANSWERED;
 
                     free(trimmed);
                     break;
@@ -573,11 +809,14 @@ void *game_loop(void *args) {
             message_time = mqi == NULL ? time(NULL): mqi->time;
         }
 
+        
         AnswerSent *as = (AnswerSent*)malloc(sizeof(AnswerSent));
         if (as == NULL) {
             // TODO: handle this better
             exit(EXIT_FAILURE);
         }
+        
+        l->state = GS_ANSWER;
 
         strncpy(as->answer, questions[questions_asked].valid_answers[0], MAX_RESPONSE_LENGTH);
         Message *as_m = payload_to_message(ANSWER_SENT, (void*)as, SERVER_UUID);
@@ -607,6 +846,14 @@ void *game_loop(void *args) {
     Message *gem = payload_to_message(GAME_ENDED, (void*)ge, SERVER_UUID);
 
     lobby_enqueue(lobby_id, SEND_QUEUE, gem, NO_SOCKET);
+
+    // Reseting the player_state
+    for (int i = 0; i < l->max_players; i++) {
+        if (l->players[i] == NULL) continue;
+        
+        l->players[i]->state = PS_IN_WAITING_ROOM;
+    }
+    l->state = GS_WAITING_ROOM;
 
     wipe_lobby_table(DATABASE_PATH, lobby_id);
 

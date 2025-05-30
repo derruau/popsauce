@@ -384,6 +384,8 @@ int main(int argc, char *argv[]) {
 
     struct sockaddr_in client_socket;
 
+    init_mutexes();
+
     printf("[SERVER]: Initializing Database...\n");
     init_database(DATABASE_PATH);
     printf("[SERVER]: Database Initialized...\n");
