@@ -773,14 +773,20 @@ void *game_loop(void *args) {
                 continue;
             }
 
+            int is_correct = 0;
+            int public_id;
+            int points_earned;
+            char *trimmed;
             for (int i = 0; i < questions[questions_asked].number_of_valid_answers; i++) {
-                char *trimmed = __trim(answersent->answer);
+                *trimmed = __trim(answersent->answer);
                 // If answer correct
                 if (strcmp(trimmed, questions[questions_asked].valid_answers[i]) == 0) {
+                    is_correct = 1;
                     if (number_of_correct_answer == 0) {
                         int player_space = get_player_space_from_id(mqi->m->uuid);
-                        int public_id = players[player_space]->public_player_id;
+                        public_id = players[player_space]->public_player_id;
 
+                        points_earned = 10;
                         l->player_points[public_id] += 10;
                         first_correct_answer = mqi->time;
                         number_of_correct_answer++;
@@ -791,9 +797,10 @@ void *game_loop(void *args) {
                         break;
                     } 
                     int player_space = get_player_space_from_id(mqi->m->uuid);
-                    int public_id = players[player_space]->public_player_id;
+                    public_id = players[player_space]->public_player_id;
                     
-                    l->player_points[public_id] += 10 - (mqi->time - first_correct_answer) < 1 ? 1 : 10 - (mqi->time - first_correct_answer);
+                    points_earned = 10 - (mqi->time - first_correct_answer) < 1 ? 1 : 10 - (mqi->time - first_correct_answer);
+                    l->player_points[public_id] += points_earned;
                     number_of_correct_answer++;
                     
                     players[player_space]->state = PS_IN_GAME_ANSWERED;
@@ -802,6 +809,19 @@ void *game_loop(void *args) {
                     break;
                 }
             }
+
+            PlayerResponseChanged *prespchanged = (PlayerResponseChanged*)malloc(sizeof(PlayerResponseChanged));
+            prespchanged->is_correct = is_correct;
+            prespchanged->player_id = public_id;
+            prespchanged->points_earned = is_correct == 0 ? 0 : points_earned;
+            if (is_correct == 1) {
+                strncpy(prespchanged->response, "Correct Answer", MAX_RESPONSE_LENGTH);
+            } else {
+                strncpy(prespchanged->response, trimmed, MAX_RESPONSE_LENGTH);
+            }
+
+            Message *prespchanged_m = payload_to_message(PLAYER_RESPONSE_CHANGED, (void*)prespchanged, SERVER_UUID);
+            lobby_enqueue(lobby_id, SEND_QUEUE, prespchanged_m, NO_SOCKET);
 
             free_message(mqi->m);
             free(mqi);
