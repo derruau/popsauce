@@ -6,6 +6,8 @@ Le jeu se joue en round qui durent 20 secondes chacun. À chaque round, le premi
 # Avertissement
 À cause d'un sérieux manque de temps due à des facteurs extérieurs, certaines fonctionnalitées ont du être annulées. Ainsi, vous verrez des `TODO` tout au long du code qui sont les vestiges des choses qui n'ont pas pu être implémentées à temps.
 
+Le code sera certainement retravaillé d'ici la soutenance du lundi 2 juin.
+
 # Compilation
 
 ## Complier le serveur
