@@ -804,7 +804,7 @@ void *game_loop(void *args) {
             int points_earned;
             char *trimmed;
             for (int i = 0; i < questions[questions_asked].number_of_valid_answers; i++) {
-                *trimmed = __trim(answersent->answer);
+                trimmed = __trim(answersent->answer);
                 // If answer correct
                 if (strcmp(__sanitize_token(trimmed), questions[questions_asked].valid_answers[i]) == 0) {
                     is_correct = 1;
