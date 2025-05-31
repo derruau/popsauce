@@ -5,6 +5,57 @@ TODO: refactor serialization / deserialization mecanism to be more general.
 */
 #include "common.h"
 
+// Reads the entire contents of a binary file (like a .jpg) into a buffer.
+// Returns the buffer and sets `size` to the file length.
+// Caller must free the returned buffer.
+// Returns NULL on failure.
+uint8_t *__read_image_to_buffer(const char *path, size_t *size) {
+    FILE *file = fopen(path, "rb");
+    if (!file) {
+        return NULL;
+    }
+
+    // Seek to end to determine size
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    // Get file size
+    long file_size = ftell(file);
+    if (file_size < 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    // Check if file size exceeds maximum payload length
+    if (file_size > MAX_PAYLOAD_LENGTH) {
+        fclose(file);
+        return NULL;
+    }
+
+    rewind(file);  // Go back to beginning
+
+    // Allocate buffer
+    uint8_t *buffer = malloc(sizeof(uint8_t)*file_size);
+    if (!buffer) {
+        fclose(file);
+        return NULL;
+    }
+
+    // Read file into buffer
+    size_t read_bytes = fread(buffer, 1, file_size, file);
+    if (read_bytes != (size_t)file_size) {
+        free(buffer);
+        fclose(file);
+        return NULL;
+    }
+
+    fclose(file);
+    *size = file_size;
+    return buffer;
+}
+
 // Returns 1 when payload has fixed size, 0 otherwise.
 int __payload_is_fixed_size(MessageType type) {
     return !( (type == QUESTION_SENT) || (type == PLAYERS_DATA) );
@@ -530,7 +581,7 @@ int serialize_message(Message *message, uint8_t **buffer, uint32_t *buffer_size)
         default:
             offset += __serialize_fixed_size_payload(message->type, message->payload, *buffer + offset);
             break;
-    }
+    } 
 
     (*buffer)[offset] = EOT;
 

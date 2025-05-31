@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <time.h>
 
 #include "game_logic.h"
 #include "message_queue.h"
@@ -18,13 +19,6 @@
 #include "common.h"
 
 #define PORT "7677" // Because it writes POPS on a 3x3 phone keyboard
-
-int listen_socket;
-pthread_t  client_threads[MAX_NUMBER_OF_PLAYERS] = {0};
-pthread_t send_threads[MAX_NUMBER_OF_LOBBIES] = {0};
-int available_client_threads[MAX_NUMBER_OF_PLAYERS] = {0};
-
-volatile int server_online = 1;
 
 typedef struct {
     int socket;

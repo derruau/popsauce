@@ -2,6 +2,7 @@
 #define COMMON_HEADER
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -148,6 +149,8 @@ typedef enum {
 
 typedef enum {
     STRING,
+    // If this support type is used, the `support` field will contain the image data.
+    // Be sure to cast the `support` field to a `uint8_t*` before using it.
     BITMAP,
 } SupportType;
 
@@ -242,6 +245,12 @@ typedef struct {
     uint32_t payload_size;      // 4 bytes 
     void *payload;
 } Message;
+
+// Reads the entire contents of a binary file (like a .jpg) into a buffer.
+// Returns the buffer and sets `size` to the file length.
+// Caller must free the returned buffer.
+// Returns NULL on failure.
+uint8_t *__read_image_to_buffer(const char *path, size_t *size);
 
 // Returns 1 when payload has fixed size, 0 otherwise.
 int __payload_is_fixed_size(MessageType type);

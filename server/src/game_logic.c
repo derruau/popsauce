@@ -836,25 +836,41 @@ int send_question(int lobby_id, Question *q) {
     if (l->state != GS_QUESTION) return 0;
 
     QuestionSent *qs = (QuestionSent*)malloc(sizeof(QuestionSent));
-        if (qs == NULL) {
-            return 0;
-        }
+    if (qs == NULL) {
+        return 0;
+    }
 
-        size_t support_size = strlen(q->support);
+    strncpy(qs->question, q->question, MAX_QUESTION_LENGTH);
+    qs->support_type = q->support_type;
+
+    size_t support_size;
+    if (q->support_type == BITMAP) {
+        qs->support = (char*)__read_image_to_buffer(q->support, &support_size);
+        if (qs->support == NULL) {
+            free(qs);
+            return 0; // Error reading image
+        }
+        if (support_size > MAX_PAYLOAD_LENGTH) {
+            free(qs->support);
+            free(qs);
+            return 0; // Support too large
+        }
+    } else {
+        support_size = strlen(q->support);
         qs->support = (char*)malloc(sizeof(char)*(support_size + 1));
         if (qs->support == NULL) {
             return 0;
         }
-
-        strncpy(qs->question, q->question, MAX_QUESTION_LENGTH);
-        qs->support_type = q->support_type;
         // For some reason, strncpy doesn't work here
         memcpy(qs->support, q->support, support_size + 1);
-        Message *qsm = payload_to_message(QUESTION_SENT, (void*)qs, SERVER_UUID);
-        
-        lobby_enqueue(lobby_id, SEND_QUEUE, qsm, NO_SOCKET);
+    }
 
-        return 1;
+
+    Message *qsm = payload_to_message(QUESTION_SENT, (void*)qs, SERVER_UUID);
+    
+    lobby_enqueue(lobby_id, SEND_QUEUE, qsm, NO_SOCKET);
+
+    return 1;
 }
 
 // Sends a PlayerResponseChanged message to the clients of the lobby 'lobby_id'.
@@ -931,9 +947,9 @@ void *game_loop(void *args) {
     while (max_pts < POINTS_TO_WIN) {
         if (questions_asked >= retrived_questions) {
             for (int i = 0; i < retrived_questions; i++) {
-                free(questions->support);
+                free(questions[i].support);
                 for (int j = 0; j < questions->number_of_valid_answers; j++) {
-                    free(questions->valid_answers[j]);
+                    free(questions[i].valid_answers[j]);
                 }
                 free(questions[i].valid_answers);
             }

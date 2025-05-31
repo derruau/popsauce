@@ -121,18 +121,37 @@ char *__utf8_to_ascii(const char *input) {
 // Sanitize a string: lowercase, strip non-alphanumeric, convert accents
 char *__sanitize_token(const char *input) {
     char *ascii = __utf8_to_ascii((char*)input);
-    char *output = __trim(ascii);
+    char *trimmed = __trim(ascii);
 
     free(ascii);
 
-    size_t len = strlen(output);
-
-    for (int i = 0; i < len; i++) {
-        if (isalnum(output[i])) {
-            output[i] = tolower(output[i]);
-        }
+    size_t len = strlen(trimmed);
+    char *output = malloc(sizeof(char)*(len + 1));
+    if (!output) {
+        free(trimmed);
+        return NULL;
     }
 
+    int j = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (isalnum(trimmed[i])) {
+            output[j] = tolower(trimmed[i]);
+            j++;
+        } 
+    }
+
+    output[j] = '\0';
+    
+    char *_tmp = realloc(output, sizeof(char)*(j + 1));
+    if (_tmp == NULL) {
+        free(output);
+        free(trimmed);
+        return NULL;
+    }
+
+    output = _tmp;
+
+    free(trimmed);
     return output;
 }
 

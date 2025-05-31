@@ -41,7 +41,17 @@ int main() {
         .valid_answers = (char *[]){"Claude François", "Cloclo   "}
     };
 
+    // Question q2 = {
+    //     .question = "D'ou provient cette image ?",
+    //     .support_type = BITMAP,
+    //     .support = "[PATH TO IMAGE ON THE COMPUTER]",
+    //     .number_of_valid_answers = 1,
+    //     .valid_answers = (char *[]){"Answer"}
+    // };
+
     insert_question(DATABASE_PATH, &q, q.number_of_valid_answers);
+    // insert_question(DATABASE_PATH, &q2, q2.number_of_valid_answers);
+
 
     printf("\nQuestion added to database!\n");
     fflush(stdout);
