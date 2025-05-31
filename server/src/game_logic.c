@@ -269,7 +269,6 @@ int lobby_mq_is_full(int lobby_id, LobbyMessageQueue kind) {
 }
 
 // Creates a player and returns the MessageQueue corresponding to this player.
-// Use errno for error detection.
 ResponseCode create_player(int player_socket, int player_id, char *username) {
     if (get_player_space_from_id(player_id) != -1) return EC_PLAYER_UUID_EXISTS;
 
