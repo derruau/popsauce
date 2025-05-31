@@ -21,15 +21,27 @@ typedef struct {
     pthread_mutex_t mutex;
 } MessageQueue;
 
-void mq_init(MessageQueue* q);
+// Initializes a message queue
+// Returns a pointer to the initialized queue, or NULL if memory allocation fails.
+MessageQueue *mq_init();
 
+// Returns 1 when message queue is empty and 0 when it's not.
+// Returns 1 if the queue is NULL
 int mq_is_empty(MessageQueue* q);
 
+// Returns 1 when message queue is full and 0 when it's not.
+// Returns 1 if the queue is NULL
 int mq_is_full(MessageQueue* q);
 
+// Enqueues an item into the message queue
+// If the queue is full, it does nothing
 void mq_enqueue(MessageQueue* mq, Message *m, int socket);
 
+// Dequeues an item from the message queue
+// Returns a pointer to the dequeued item, or NULL if the queue is empty
 MessageQueueItem *mq_dequeue(MessageQueue* mq);
 
+// Frees the message queue and all its items
 void mq_free(MessageQueue *mq);
+
 #endif

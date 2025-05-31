@@ -143,6 +143,7 @@ typedef enum {
     EC_INSUFFICIENT_PERMISSION,
     EC_WRONG_RESPONSE,
     EC_CANNOT_SUBMIT,
+    EC_PLAYER_DOESNT_EXIST,
 } ResponseCode;
 
 typedef enum {

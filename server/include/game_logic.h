@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <time.h>
 #include "common.h"
 #include "message_queue.h"
 #include "questions.h"
@@ -48,7 +49,7 @@ typedef struct {
     int private; // Unused, will be implemented when Lobby Rules are implemented
     int max_players;
     int players_in_lobby;
-    pthread_t *game_thread;
+    pthread_t game_thread;
     pthread_t *send_thread;
     char name[MAX_LOBBY_LENGTH];
     GameState state;
@@ -72,14 +73,19 @@ extern pthread_mutex_t lobbies_mutex[MAX_NUMBER_OF_LOBBIES]; // TODO: implement 
 extern Player *players[MAX_NUMBER_OF_PLAYERS];
 extern pthread_mutex_t players_mutex[MAX_NUMBER_OF_PLAYERS]; // TODO: implement that
 
-void init_mutexes();
+// Initializes the mutexes used for lobbies and players
+void init_game_mutexes();
 
+// Locks all lobbies mutexes
 void lock_all_lobbies();
 
+// Locks all players mutexes
 void lock_all_players();
 
+// Unlocks all lobbies mutexes
 void unlock_all_lobbies();
 
+// Unlocks all players mutexes
 void unlock_all_players();
 
 // Gets the first available lobby space,
@@ -93,6 +99,10 @@ int get_available_player_space();
 // Returns a player's space from his id
 // returns -1 if player doesn't exist
 int get_player_space_from_id(int player_id);
+
+// Returns a player's id from his socket
+// returns -1 if player doesn't exist
+int get_player_id_from_socket(int socket);
 
 // returns an available public_id for a specific lobby
 // returns -1 if none is found
@@ -108,12 +118,18 @@ int get_lobby_of_player(int player_id);
 // Returns NULL when in invalid lobby id is specified
 Player **get_players_from_lobby(int lobby_id, int *players_in_lobby);
 
-int get_player_id_from_socket(int socket);
-
+// Returns the MessageQueue corresponding to the lobby and queue type.
+// Returns NULL when the lobby doesn't exist or the queue type is invalid.
 MessageQueue *get_message_queue_of_lobby(int lobby_id, LobbyMessageQueue queue);
 
+// Sets the lobby's send thread to the given thread.
+ResponseCode set_lobby_send_thread(int lobby_id, pthread_t *thread);
+
+// Enqueues a message in the lobby's message queue.
 ResponseCode lobby_enqueue(int lobby_id, LobbyMessageQueue kind, Message *m, int socket);
 
+// Dequeues a message from the lobby's message queue.
+// Returns NULL when the lobby doesn't exist or the queue type is invalid.
 MessageQueueItem *lobby_dequeue(int lobby_id, LobbyMessageQueue kind);
 
 // Returns 1 when message queue is empty and 0 when it's not.
@@ -125,14 +141,17 @@ int lobby_mq_is_empty(int lobby_id, LobbyMessageQueue kind);
 int lobby_mq_is_full(int lobby_id, LobbyMessageQueue kind);
 
 // Creates a player and returns the MessageQueue corresponding to this player.
-// Use errno for error detection.
 ResponseCode create_player(int player_socket, int player_id, char *username);
 
+// Deletes a player from the game.
+// Returns EC_PLAYER_DOESNT_EXIST when the player doesn't exist, RC_SUCCESS when the player was deleted successfully
 ResponseCode delete_player(int player_id, Message **player_quit);
 
 // Returns the lobby's id in lobby_id if successfully created
 ResponseCode create_lobby(char *name, int max_players, int owner_id, int *lobby_id);
 
+// Deletes a lobby from the game.
+// Returns EC_CANNOT_DELETE_LOBBY when the lobby has players in it
 ResponseCode delete_lobby(int lobby_id);
 
 // Returns the PlayerQuit message in player_quit
@@ -141,22 +160,41 @@ ResponseCode quit_lobby(int player_id, Message **player_quit);
 // Returns the PlayerJoined message in player_joined
 ResponseCode join_lobby(int player_id, int lobby_id, Message **player_joined);
 
+// Starts the game in the lobby with the given id.
 ResponseCode start_game(int player_id, int lobby_id);
 
+// Returns a list of lobbies in the game.
 ResponseCode get_lobby_list(Message **lobbylist);
 
+// Returns the PlayersData message with the players in the lobby.
+// If the lobby doesn't exist or there are no players in it, returns EC_LOBBY_DOESNT_EXIST.
 ResponseCode get_players_data(int lobby_id, Message **playersdata);
-
-ResponseCode set_lobby_send_thread(int lobby_id, pthread_t *thread);
 
 // Returns 0 when you can't submit answers
 // Returns 1 when you can
 int can_submit_answers(int lobby_id, int player_id);
 
-// J'ai besoin d'envoyer des données entre ce thread (2) et le thread principal (1)
-// de (2) vers (1): Je dois envoyer: GAME_STARTS, QUESTION_SENT, ANSWER_SENT et GAME_ENDED, PLAYER_RESPONSE_CHANGED => que des broadcast
-// de (1) vers (2): Je dois envoyer: ANSWER_SENT
-// Dans tout les cas, on va avoir besoin d'une file de message à traiter
+// Ends the game in the lobby with the given id.
+// Returns 0 when the game couldn't be ended, 1 when it was ended successfully
+int end_game(int lobby_id, int winner_public_id);
+
+// Returns the public player id of the player with the most points in the lobby.
+// Returns -1 when the lobby doesn't exist, the game isn't in a valid state or there are no players in the lobby
+int get_player_public_id_with_max_points(int lobby_id);
+
+// Enqueues a question 'q' to be sent to clients of the lobby 'lobby_id'.
+// Returns 0 when the question couldn't be sent, 1 when it was sent successfully
+int send_question(int lobby_id, Question *q);
+
+// Sends a PlayerResponseChanged message to the clients of the lobby 'lobby_id'.
+// Returns 0 when the message couldn't be sent, 1 when it was sent successfully
+int send_player_response_changed(int lobby_id, int is_correct, int public_id, int points_earned, char *response);
+
+// The game loop for the lobby with the given id.
+// This function is run in a separate thread and handles the game logic.
+// It will run until the game is over or an error occurs.
+// It will also handle the queuing of QUESTION_SENT, ANSWER_SENT, PLAYER_RESPONSE_CHANGED & GAME_ENDED messages.
+// It also processes the answers sent by the players and updates their points accordingly.
 void *game_loop(void *args);
 
 #endif

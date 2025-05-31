@@ -27,6 +27,7 @@ char *__trim(char *str) {
     return strdup(str);
 }
 
+// Parses a comma-separated string into an array of strings
 char **__parse_string(char *string, size_t *number_of_valid_answers) {
     if (!string) return NULL;
 
@@ -52,53 +53,90 @@ char **__parse_string(char *string, size_t *number_of_valid_answers) {
     return result;
 }
 
-// Convert accented Latin characters to ASCII equivalents
-char __replace_accent(unsigned char c) {
-    switch (c) {
+// Map known Unicode codepoints to ASCII
+char __unicode_to_ascii(int codepoint) {
+    switch (codepoint) {
         // Lowercase
-        case 0xE0: case 0xE1: case 0xE2: case 0xE3: case 0xE4: case 0xE5: return 'a'; // à á â ã ä å
-        case 0xE8: case 0xE9: case 0xEA: case 0xEB: return 'e';                     // è é ê ë
-        case 0xEC: case 0xED: case 0xEE: case 0xEF: return 'i';                     // ì í î ï
-        case 0xF2: case 0xF3: case 0xF4: case 0xF5: case 0xF6: return 'o';          // ò ó ô õ ö
-        case 0xF9: case 0xFA: case 0xFB: case 0xFC: return 'u';                     // ù ú û ü
-        case 0xE7: return 'c';                                                     // ç
-        case 0xF1: return 'n';                                                     // ñ
-        case 0xFD: case 0xFF: return 'y';                                          // ý ÿ
+        case 0xE0: case 0xE1: case 0xE2: case 0xE3: case 0xE4: case 0xE5: return 'a';
+        case 0xE8: case 0xE9: case 0xEA: case 0xEB: return 'e';
+        case 0xEC: case 0xED: case 0xEE: case 0xEF: return 'i';
+        case 0xF2: case 0xF3: case 0xF4: case 0xF5: case 0xF6: return 'o';
+        case 0xF9: case 0xFA: case 0xFB: case 0xFC: return 'u';
+        case 0xE7: return 'c';
+        case 0xF1: return 'n';
+        case 0xFD: case 0xFF: return 'y';
 
         // Uppercase
-        case 0xC0: case 0xC1: case 0xC2: case 0xC3: case 0xC4: case 0xC5: return 'A'; // À Á Â Ã Ä Å
-        case 0xC8: case 0xC9: case 0xCA: case 0xCB: return 'E';                       // È É Ê Ë
-        case 0xCC: case 0xCD: case 0xCE: case 0xCF: return 'I';                       // Ì Í Î Ï
-        case 0xD2: case 0xD3: case 0xD4: case 0xD5: case 0xD6: return 'O';            // Ò Ó Ô Õ Ö
-        case 0xD9: case 0xDA: case 0xDB: case 0xDC: return 'U';                       // Ù Ú Û Ü
-        case 0xC7: return 'C';                                                       // Ç
-        case 0xD1: return 'N';                                                       // Ñ
-        case 0xDD: return 'Y';  
+        case 0xC0: case 0xC1: case 0xC2: case 0xC3: case 0xC4: case 0xC5: return 'A';
+        case 0xC8: case 0xC9: case 0xCA: case 0xCB: return 'E';
+        case 0xCC: case 0xCD: case 0xCE: case 0xCF: return 'I';
+        case 0xD2: case 0xD3: case 0xD4: case 0xD5: case 0xD6: return 'O';
+        case 0xD9: case 0xDA: case 0xDB: case 0xDC: return 'U';
+        case 0xC7: return 'C';
+        case 0xD1: return 'N';
+        case 0xDD: return 'Y';
 
-        default: return c;
+        default: return '?';  // Replace unknown characters
     }
+}
+
+// Converts a UTF-8 string to ASCII by replacing accented Latin-1 characters
+// Returns a newly allocated string. Caller must free it.
+char *__utf8_to_ascii(const char *input) {
+    size_t len = strlen(input);
+    char *output = malloc(len + 1); // output won't be longer than input
+    if (!output) return NULL;
+
+    size_t in = 0, out = 0;
+    while (input[in] != '\0') {
+        unsigned char c = input[in];
+
+        if (c < 0x80) {
+            // ASCII byte
+            output[out++] = c;
+            in++;
+        } else if ((c & 0xE0) == 0xC0) {
+            // 2-byte sequence
+            if ((input[in + 1] & 0xC0) == 0x80) {
+                int codepoint = ((input[in] & 0x1F) << 6) |
+                                (input[in + 1] & 0x3F);
+                output[out++] = __unicode_to_ascii(codepoint);
+                in += 2;
+            } else {
+                // Invalid continuation
+                output[out++] = '?';
+                in++;
+            }
+        } else {
+            // Multibyte character we don't support → skip 1 byte
+            output[out++] = '?';
+            in++;
+        }
+    }
+
+    output[out] = '\0';
+    return output;
 }
 
 // Sanitize a string: lowercase, strip non-alphanumeric, convert accents
 char *__sanitize_token(const char *input) {
-    size_t len = strlen(input);
-    char *output = malloc(len + 1); // Max possible length
-    if (!output) return NULL;
+    char *ascii = __utf8_to_ascii((char*)input);
+    char *output = __trim(ascii);
 
-    size_t j = 0;
-    for (size_t i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)input[i];
-        c = __replace_accent(c);
+    free(ascii);
 
-        if (isalnum(c)) {
-            output[j++] = tolower(c);
+    size_t len = strlen(output);
+
+    for (int i = 0; i < len; i++) {
+        if (isalnum(output[i])) {
+            output[i] = tolower(output[i]);
         }
     }
 
-    output[j] = '\0';
     return output;
 }
 
+// Combines an array of strings into a single string, separated by commas.
 char *__combine_strings(char **array, size_t size) {
     if (!array || size == 0) return NULL;
 
@@ -149,7 +187,8 @@ int init_database(const char *db_filename) {
         "question TEXT NOT NULL,"
         "support_type INTEGER NOT NULL,"
         "support TEXT,"
-        "valid_answers TEXT"
+        "valid_answers TEXT,"
+        "UNIQUE(question, support_type, support)"
         ");";
 
     int rc = sqlite3_open(db_filename, &db);
@@ -212,6 +251,7 @@ int create_lobby_table(const char *db_filename, int lobby_id) {
     return SQLITE_OK;
 }
 
+// Wipes the lobby table by deleting all entries
 int wipe_lobby_table(const char *db_filename, int lobby_id) {
     sqlite3 *db;
     char *err_msg = NULL;
@@ -240,6 +280,7 @@ int wipe_lobby_table(const char *db_filename, int lobby_id) {
     return SQLITE_OK;
 }
 
+// Destroys the lobby table by dropping it
 int destroy_lobby_table(const char *db_filename, int lobby_id) {
     sqlite3 *db;
     char *err_msg = NULL;
@@ -268,6 +309,7 @@ int destroy_lobby_table(const char *db_filename, int lobby_id) {
     return SQLITE_OK;
 }
 
+// Retrieves 'n' random questions from the database that have not yet been asked in this specific lobby.
 int get_random_questions(const char *db_filename, int lobby_id, int n, Question **out_questions) {
     sqlite3 *db;
     char query[MAX_QUERY_LENGTH];
@@ -340,6 +382,7 @@ int get_random_questions(const char *db_filename, int lobby_id, int n, Question 
     return count; // Return how many questions were actually retrieved
 }
 
+// Inserts a question into the database.
 int insert_question(const char *db_filename, Question *q, size_t answer_count) {
     sqlite3 *db;
     const char *sql = "INSERT INTO questions (question, support_type, support, valid_answers) VALUES (?, ?, ?, ?);";

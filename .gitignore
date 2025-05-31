@@ -56,3 +56,6 @@ dkms.conf
 **/*.sqlite
 popsauce-server
 **/.~lock.*
+**/*_test
+**/leak.txt
+**/bin/

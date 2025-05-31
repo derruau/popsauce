@@ -38,6 +38,9 @@ int __get_payload_size(MessageType type, void *payload) {
             return sizeof(GameEnded);
         case QUESTION_SENT:
             QuestionSent *qsent = (QuestionSent*)payload;
+            if (qsent->support == NULL) {
+                return sizeof(qsent->question) + sizeof(qsent->support_type);
+            }
             return sizeof(qsent->question) + sizeof(qsent->support_type) + strlen(qsent->support);
         case PLAYERS_DATA:
             PlayersData *pdata = (PlayersData*)payload;
