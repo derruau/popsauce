@@ -100,6 +100,13 @@ int server_listen(char *port) {
     listen_socket.sin_addr.s_addr = INADDR_ANY;
     listen_socket.sin_port = htons(_port);
 
+    // If program crashes without closing the sockets, can rebind it immediatly.
+    int opt = 1;
+    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+
     int errors = bind(listen_fd,  (struct sockaddr *)&listen_socket, sizeof(listen_socket));
     if (errors < 0) {
         printf("[ERROR]: Cannot bind socket to port %s.\n", port);
@@ -138,17 +145,14 @@ void INThandler(int sig) {
         printf("[SERVER]: Server stopping...\n");
 
         accept_connections = 0;
-        lock_all_players();
         for (int i = 0; i < MAX_NUMBER_OF_PLAYERS; i++) {
             if (players[i] != NULL) {
-                pthread_mutex_unlock(&players_mutex[i]);
                 // By doing this, we also delete all lobbies
                 delete_player(players[i]->player_id, NULL);
                 printf("[SERVER]: Player '%s' disconnected.\n", players[i]->username);
             }
         }
-        unlock_all_players();
-        
+
         for (int i=0; i < MAX_NUMBER_OF_PLAYERS; i++) {
             if (available_client_threads[i] != 0) {
                 pthread_cancel(client_threads[available_client_threads[i]]);
@@ -210,14 +214,15 @@ void *handle_client_thread(void *arg) {
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
         buffer = receive_message(a->socket, &buffer_size, MAX_PAYLOAD_LENGTH);
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-
-        if (errno != 0) {
-            free(buffer);
-            continue;
-        }
             
         // This happens because of a sudden disconnect from the client
         if (buffer_size == 0) {
+            if (errno != 0) {
+                printf("[WARNING]: Connection suddently closed with thread ID: %i\n", a->connection_id);
+            } else {
+                printf("[INFO]: Connection closed with thread ID: %i", a->connection_id);
+            }
+
             int player_id = get_player_id_from_socket(a->socket);
             if (player_id != -1) {
                 Message *playerquit;
@@ -227,10 +232,7 @@ void *handle_client_thread(void *arg) {
                     lobby_enqueue(lobby_id, SEND_QUEUE, playerquit, NO_SOCKET);
                 }
             }
-            close(a->socket);
-            free(buffer);
-            free(a);
-            pthread_exit(NULL);
+            break;
         }
 
         Message *m = deserialize_message(buffer);
@@ -244,6 +246,7 @@ void *handle_client_thread(void *arg) {
         switch (m->type) {
         case CONNECT:
             Connect *c = (Connect*)m->payload;
+            printf("[SERVER]: Received CONNECT Message from thread ID %i: (Username: '%s')\n", a->connection_id, c->username);
             rc = create_player(a->socket, m->uuid, c->username);
             if (rc == RC_SUCCESS) {
                 rc = get_lobby_list(&response);
@@ -347,6 +350,7 @@ void *handle_client_thread(void *arg) {
         }
     }
 
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     available_client_threads[a->connection_id] = 0;
     close(a->socket);
     free(buffer);

@@ -640,13 +640,14 @@ uint8_t *receive_message(int sockfd, uint32_t *buffer_size, uint32_t max_buffer_
         int nb_read = read(sockfd, &char_buffer, 1);
 
         if (nb_read == -1) {
-            errno = -1;
+            errno = 1;
+            *buffer_size = 0;
             free(readbuffer);
             return NULL;
         }
 
         else if (nb_read == 0) {
-            errno = 1;
+            *buffer_size = 0;
             free(readbuffer);
             return NULL;
         }
@@ -669,9 +670,10 @@ uint8_t *receive_message(int sockfd, uint32_t *buffer_size, uint32_t max_buffer_
                 return NULL;
             }
 
-            strncpy((char*)_tmp, (char*)readbuffer, total_char_read - 1);
+            memcpy((char*)_tmp, (char*)readbuffer, total_char_read - 1);
             readbuffer_size = (int)(readbuffer_size*1.5);
 
+            free(readbuffer);
             readbuffer = _tmp;
         }
 

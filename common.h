@@ -154,6 +154,25 @@ typedef enum {
     BITMAP,
 } SupportType;
 
+typedef enum {
+    CS_DISCONNECTED, // Disconnected from server
+    CS_CONNECTED, // Connected to server
+    CS_SETTING_USERNAME, // In the screen right after being connected
+    CS_LOBBY_SELECTION, // In the screen where you either select or create a lobby
+    CS_WAITING_ROOM, // Screen for the waiting room
+    CS_QUESTION, // Screen for answering a question
+    CS_ANSWER, // Screen for when the server gives the answer to the question
+    CS_GAME_END, // Screen for when the game ends and the winner is designated
+} ClientState;
+
+typedef struct {
+    char *username;
+    int player_id;
+    int public_id;
+    int lobby_id;
+    int socket;
+} ClientPlayer; 
+
 typedef struct {
     char username[MAX_USERNAME_LENGTH];
 } Connect;

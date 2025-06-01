@@ -1,5 +1,5 @@
-#ifndef MAIN_HEADER
-#define MAIN_HEADER
+#ifndef SERVER_MAIN_HEADER
+#define SERVER_MAIN_HEADER
 
 #include <sys/socket.h>
 #include <netinet/in.h>

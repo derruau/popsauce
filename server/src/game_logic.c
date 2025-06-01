@@ -307,14 +307,16 @@ ResponseCode create_player(int player_socket, int player_id, char *username) {
 // Returns EC_PLAYER_DOESNT_EXIST when the player doesn't exist, RC_SUCCESS when the player was deleted successfully
 ResponseCode delete_player(int player_id, Message **player_quit) {
     int player_space = get_player_space_from_id(player_id);
-    if (player_space != -1) return EC_PLAYER_DOESNT_EXIST; 
+    if (player_space == -1) return EC_PLAYER_DOESNT_EXIST; 
 
     pthread_mutex_lock(&players_mutex[player_space]);
 
     Player *p = players[player_space];
 
     if (p->lobby_id >= 0) {
+        pthread_mutex_unlock(&players_mutex[player_space]);
         ResponseCode rc = quit_lobby(player_id, player_quit);
+        pthread_mutex_lock(&players_mutex[player_space]);
 
         if (rc != RC_SUCCESS) {
             pthread_mutex_unlock(&players_mutex[player_space]);
@@ -323,6 +325,7 @@ ResponseCode delete_player(int player_id, Message **player_quit) {
     }
 
     free(p);
+    players[player_space] = NULL;
     
     pthread_mutex_unlock(&players_mutex[player_space]);
     return RC_SUCCESS;
@@ -481,9 +484,9 @@ ResponseCode quit_lobby(int player_id, Message **player_quit) {
         
         // If the owner couldn't be changed, then there are no more players
         // in the lobby and it has to be deleted
-        pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
-        pthread_mutex_unlock(&players_mutex[player_space]);
         if (!changed) {
+            pthread_mutex_unlock(&lobbies_mutex[lobby_id]);
+            pthread_mutex_unlock(&players_mutex[player_space]);
             delete_lobby(l->lobby_id);
             return RC_SUCCESS;
         }
