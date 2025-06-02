@@ -543,21 +543,27 @@ Message *payload_to_message(MessageType type, void *payload, uint32_t uuid) {
 // The buffer has to be uninitialized.
 // Returns 0 when successful, and a non zero value when an error occurs.
 int serialize_message(Message *message, uint8_t **buffer, uint32_t *buffer_size) {
-    // The '+1' is to put a EOT at the end of the message.
-    *buffer_size = sizeof(Message) - sizeof(message->payload) + message->payload_size + 1;
-
+    *buffer_size = 4 + sizeof(Message) - sizeof(message->payload) + message->payload_size;
+    
+    // The '4+' is to put the length of the message in bytes.
     *buffer = (uint8_t*)malloc(*buffer_size);
 
     if (*buffer == NULL) {
         return 1;
     }
 
+    // We need to write the size of the message at the beginning of the buffer.
+    int msize = htonl(sizeof(Message) - sizeof(message->payload) + message->payload_size);
+    memcpy(*buffer, &msize, sizeof(msize));
+
+    size_t offset = sizeof(msize);
+
     // Type
     // MessageType is guaranteed to be 4 bytes long thanks to #pragma enum(4)
     uint32_t net_type = htonl(message->type);
-    memcpy(*buffer, &net_type, sizeof(net_type));
+    memcpy(*buffer + offset, &net_type, sizeof(net_type));
 
-    size_t offset = sizeof(net_type);
+    offset += sizeof(net_type);
 
     // UUID
     uint32_t net_uuid = htonl(message->uuid);
@@ -591,10 +597,10 @@ int serialize_message(Message *message, uint8_t **buffer, uint32_t *buffer_size)
 
 // Sends a message `buffer` throught the socket file descriptor `sockfd`.
 // You also need to provide the length of the buffer.
-// If the server responds to the message, the reponse will be stored inside `response`. This parameter needs to be initialized beforehand.
+// If the server responds to the message, the reponse will be stored inside `response`. This parameter does not need to be initialized beforehand.
 // If `response == NULL`, the message that is sent doesn't expect a response.
 // Returns 0 when successful, and a non zero value when an error occurs.
-int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message *response) {
+int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message **response) {
     // This function needs to handle the response given by the server to particular events
     if (buffer == NULL) {
         return 1;
@@ -614,10 +620,10 @@ int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message *res
         return errno;
     }
 
-    response = deserialize_message(rbuffer);
+    *response = deserialize_message(rbuffer);
 
     if (errno != 0) {
-        if (response != NULL) free_message(response);
+        if (*response != NULL) free_message(*response);
         return errno;
     }
 
@@ -631,57 +637,105 @@ int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message *res
 // If the message contains more bytes than max_buffer_size, the whole message is thrown away and an error is thrown.
 // Use errno for error detection. errno == 0 when successful, and a non zero value when an error occured. 
 uint8_t *receive_message(int sockfd, uint32_t *buffer_size, uint32_t max_buffer_size) {
-    int total_char_read = 0;
-    int readbuffer_size = READBUFFER_LENGTH;
-    uint8_t *readbuffer = malloc(sizeof(uint8_t)*READBUFFER_LENGTH);
+    // int total_char_read = 0;
+    // int readbuffer_size = READBUFFER_LENGTH;
+    // uint8_t *readbuffer = malloc(sizeof(uint8_t)*READBUFFER_LENGTH);
 
-    uint8_t char_buffer;
-    while ((uint32_t)total_char_read < max_buffer_size) {
-        int nb_read = read(sockfd, &char_buffer, 1);
+    // uint8_t char_buffer;
+    // while ((uint32_t)total_char_read < max_buffer_size) {
+    //     int nb_read = read(sockfd, &char_buffer, 1);
 
-        if (nb_read == -1) {
+    //     if (nb_read == -1) {
+    //         errno = 1;
+    //         *buffer_size = 0;
+    //         free(readbuffer);
+    //         return NULL;
+    //     }
+
+    //     else if (nb_read == 0) {
+    //         *buffer_size = 0;
+    //         free(readbuffer);
+    //         return NULL;
+    //     }
+
+    //     // At the end of every message we send an EOT character
+    //     else if (char_buffer == EOT) {
+    //         break;
+    //     }
+
+    //     total_char_read++;
+
+    //     // Reallocation procedure. It's better to do this than to use realloc because of the way realloc works
+    //     // https://linux.die.net/man/3/realloc
+    //     if (total_char_read > readbuffer_size) {
+    //         uint8_t *_tmp = (uint8_t*)malloc(sizeof(uint8_t)*( (int)(readbuffer_size*1.5) ));
+
+    //         if (_tmp == NULL) {
+    //             errno = 2;
+    //             free(readbuffer);
+    //             return NULL;
+    //         }
+
+    //         memcpy((char*)_tmp, (char*)readbuffer, total_char_read - 1);
+    //         readbuffer_size = (int)(readbuffer_size*1.5);
+
+    //         free(readbuffer);
+    //         readbuffer = _tmp;
+    //     }
+
+    //     readbuffer[total_char_read - 1] = char_buffer;
+    // }
+
+    // *buffer_size = total_char_read;
+    // return readbuffer;
+    *buffer_size = 0;
+    uint32_t net_msg_len;
+    ssize_t n;
+
+    // Step 1: Read 4-byte length header
+    uint8_t *p = (uint8_t *)&net_msg_len;
+    size_t read_len = 0;
+    while (read_len < sizeof(net_msg_len)) {
+        n = read(sockfd, p + read_len, sizeof(net_msg_len) - read_len);
+        if (n == 0) {
+            *buffer_size = 0;
+            return NULL;
+        }
+
+        if (n < 0) {
             errno = 1;
             *buffer_size = 0;
-            free(readbuffer);
             return NULL;
         }
-
-        else if (nb_read == 0) {
-            *buffer_size = 0;
-            free(readbuffer);
-            return NULL;
-        }
-
-        // At the end of every message we send an EOT character
-        else if (char_buffer == EOT) {
-            break;
-        }
-
-        total_char_read++;
-
-        // Reallocation procedure. It's better to do this than to use realloc because of the way realloc works
-        // https://linux.die.net/man/3/realloc
-        if (total_char_read > readbuffer_size) {
-            uint8_t *_tmp = (uint8_t*)malloc(sizeof(uint8_t)*( (int)(readbuffer_size*1.5) ));
-
-            if (_tmp == NULL) {
-                errno = 2;
-                free(readbuffer);
-                return NULL;
-            }
-
-            memcpy((char*)_tmp, (char*)readbuffer, total_char_read - 1);
-            readbuffer_size = (int)(readbuffer_size*1.5);
-
-            free(readbuffer);
-            readbuffer = _tmp;
-        }
-
-        readbuffer[total_char_read - 1] = char_buffer;
+        read_len += n;
     }
 
-    *buffer_size = total_char_read;
-    return readbuffer;
+    uint32_t msg_len = ntohl(net_msg_len);  // Convert to host byte order
+
+    if (msg_len > max_buffer_size) {
+        errno = EMSGSIZE;
+        return NULL;
+    }
+
+    // Step 2: Allocate buffer and read the full message
+    uint8_t *buffer = malloc(msg_len);
+    if (!buffer) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    read_len = 0;
+    while (read_len < msg_len) {
+        n = read(sockfd, buffer + read_len, msg_len - read_len);
+        if (n < 0) {
+            free(buffer);
+            return NULL;
+        }
+        read_len += n;
+    }
+
+    *buffer_size = msg_len;
+    return buffer;
 }
 
 // Deserializes a serialized message and returns a structure that can be read by the program.

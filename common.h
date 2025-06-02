@@ -313,7 +313,7 @@ int serialize_message(Message *message, uint8_t **buffer, uint32_t *buffer_size)
 // If the server responds to the message, the reponse will be stored inside `response`. This parameter needs to be initialized beforehand.
 // If `response == NULL`, the message that is sent doesn't expect a response.
 // Returns 0 when successful, and a non zero value when an error occurs.
-int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message *response);
+int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message **response);
 // Waits for a message to be sent on the socket `sockfd` and returns it. This function is blocking.
 // The message buffer's size is returned as part of the `buffer_size` parameter.
 // If the message contains more bytes than max_buffer_size, the whole message is thrown away and an error is thrown.

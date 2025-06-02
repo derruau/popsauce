@@ -201,6 +201,9 @@ int safe_send_message(int socket, Message *m) {
         if (ok != 0) exit(EXIT_FAILURE);
     }
 
+    printf("[SERVER]: Sending message of type %i to socket %i\n", m->type, socket);
+    free_message(m);
+
     return send_message(socket, buffer, buffer_size, NULL);
 }
 
@@ -214,13 +217,13 @@ void *handle_client_thread(void *arg) {
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
         buffer = receive_message(a->socket, &buffer_size, MAX_PAYLOAD_LENGTH);
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-            
+        
         // This happens because of a sudden disconnect from the client
         if (buffer_size == 0) {
             if (errno != 0) {
                 printf("[WARNING]: Connection suddently closed with thread ID: %i\n", a->connection_id);
             } else {
-                printf("[INFO]: Connection closed with thread ID: %i", a->connection_id);
+                printf("[INFO]: Connection closed with thread ID: %i\n", a->connection_id);
             }
 
             int player_id = get_player_id_from_socket(a->socket);
@@ -250,7 +253,6 @@ void *handle_client_thread(void *arg) {
             rc = create_player(a->socket, m->uuid, c->username);
             if (rc == RC_SUCCESS) {
                 rc = get_lobby_list(&response);
-
                 // get_lobby_list() doesn't leak when it fails so we don't have to free anything
                 if (rc != RC_SUCCESS) response = responsecode_to_message(EC_INTERNAL_ERROR, SERVER_UUID, EC_INTERNAL_ERROR);
             } else {
