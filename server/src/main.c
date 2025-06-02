@@ -357,13 +357,15 @@ void *handle_client_thread(void *arg) {
             break;
         case SEND_RESPONSE:
             lobby_id = get_lobby_of_player(m->uuid);
+            printf("[SERVER]: Received SEND_RESPONSE Message from thread ID %i (Lobby: %i)\n", a->connection_id, lobby_id);
                         
             if (!can_submit_answers(lobby_id, m->uuid)) {
                 response = responsecode_to_message(EC_CANNOT_SUBMIT, SERVER_UUID, EC_CANNOT_SUBMIT);
                 safe_send_message(a->socket, response);
+                break;
             }
 
-            lobby_enqueue(lobby_id, RECEIVE_QUEUE, m, a->socket);
+            rc = lobby_enqueue(lobby_id, RECEIVE_QUEUE, m, a->socket);
             break;
         default:
             //TODO
@@ -472,6 +474,9 @@ int main(int argc, char *argv[]) {
 
     printf("[SERVER]: Initializing Database...\n");
     init_database(DATABASE_PATH);
+    for (int i = 0; i < MAX_NUMBER_OF_LOBBIES; i++) {
+        destroy_lobby_table(DATABASE_PATH, i);
+    }
     printf("[SERVER]: Database Initialized...\n");
 
     int listen_fd = server_listen(PORT);

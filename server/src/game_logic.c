@@ -821,6 +821,7 @@ int get_player_public_id_with_max_points(int lobby_id) {
     for (int i = 0; i < l->max_players; i++) {
         if (l->players[i] == NULL) continue;
         
+        printf("Player %s has %i points\n", l->players[i]->username, l->player_points[i]);
         if (l->player_points[i] > max_points) {
             max_points = l->player_points[i];
             player_with_max_points = l->players[i]->public_player_id;
@@ -971,6 +972,7 @@ void *game_loop(void *args) {
         }
 
         l->state = GS_QUESTION;
+        number_of_correct_answer = 0;
         if (!send_question(lobby_id, &questions[questions_asked])) exit(EXIT_FAILURE);
         
         // Reseting the player_state
@@ -996,14 +998,16 @@ void *game_loop(void *args) {
                 message_time = (mqi == NULL) ? time(NULL) : mqi->time;
                 continue;
             }
+
+            // printf("Answer detected!\n");
             
-            AnswerSent *answersent = (AnswerSent*)mqi->m->payload;
+            SendResponse *sendreponse = (SendResponse*)mqi->m->payload;
             int is_correct = 0;
             int public_id;
             int points_earned;
             char *sanitized;
             for (int i = 0; i < questions[questions_asked].number_of_valid_answers; i++) {
-                sanitized = __sanitize_token(answersent->answer);
+                sanitized = __sanitize_token(sendreponse->response);
                 // If answer correct
                 if (strcmp(sanitized, questions[questions_asked].valid_answers[i]) == 0) {
                     is_correct = 1;
@@ -1013,11 +1017,10 @@ void *game_loop(void *args) {
                         points_earned = 10;
                         l->player_points[public_id] += 10;
                         first_correct_answer = mqi->time;
-                    } else {                   
+                    } else {                  
                         points_earned = 10 - (mqi->time - first_correct_answer) < 1 ? 1 : 10 - (mqi->time - first_correct_answer);
                         l->player_points[public_id] += points_earned;
                     }
-                    
                     number_of_correct_answer++;
                     players[player_space]->state = PS_IN_GAME_ANSWERED;
                     break;

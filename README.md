@@ -3,11 +3,6 @@ Le Popsauce est un jeu de culture générale dont le but est de trouver le plus 
 
 Le jeu se joue en round qui durent 20 secondes chacun. À chaque round, le premier joueur qui réponds correctement à la question posée gagne 10 points. Puis les autres joueurs qui répondent correctement gagnent `max(10 - (time(NULL) - time_of_first_response), 1)` points. Le jeu s'arrête lorsqu'un joueur a atteint 100 points.
 
-# Avertissement
-À cause d'un sérieux manque de temps due à des facteurs extérieurs, certaines fonctionnalitées ont du être annulées. Ainsi, vous verrez des `TODO` tout au long du code qui sont les vestiges des choses qui n'ont pas pu être implémentées à temps.
-
-Le code sera certainement retravaillé d'ici la soutenance du lundi 2 juin.
-
 # Compilation
 
 ## Complier le serveur
@@ -22,9 +17,35 @@ L'exécutable s'appelle `popsauce-server`.
 
 ## Compiler le client
 
-TODO
+Le client est compilé avec la librarie libsixel bien qu'il ne soit pas dépendant de celle ci car cette librairie se trouve parmis les choses que nous n'avons pas eu le temps d'implémenter.
+Pour le compiler, faire:
+```bash
+cd client
+make
+```
 
 # Utilisation
+## Utilisation du client
+Pour démarrer le client, faire:
+```bash
+./popsauce-client [ADRESSE_IP]:[PORT]
+```
+
+Notez qu'il faut d'abord démarrer le serveur avant de démarrer le client.
+
+Vous trouverez le port du serveur dans la `stdout` lorsque celui-ci démarre. Par défaut, ce port est `7677`.
+
+Une fois que vous avez démarré le client, vous devrez rentrer votre pseudo et appuyez sur entré; vous serez ensuite transporté dans
+un menu qui vous permet de choisir si vous voulez créer un lobby ou en rejoindre un. Déplacez vous avec les flèches directionnelles et appuyez sur entré pour choisir une option.
+
+Si vous avez choisi de créer un lobby, vous pourrez choisir son nom et son nombre maximum de joueur. Appuyez sur entré pour créer le lobby.
+
+Une fois dans le lobby, vous devrez au moins être 2 personnes pour lancer une partie. Dès lors qu'une deuxième personne rejoint le lobby, vous pouvez appuyer sur Entré et le jeu commence dans 5 secondes.
+
+Votre but sera de répondre aux questions en tapant au clavier la réponse. Si lorsque vous tapez rien ne s'affiche à l'écran, réessayez de focus votre souris sur le terminal.
+
+Chaque round dure 20 seconde. La première personne qui répond juste remporte 10 points et moins pour les personnes suivantes. La partie s'arrête lorsque quelqu'un a atteint les 100 points où qu'il n'y a plus de questions qui n'ont pas encore été posé pendant cette partie dans la base de donnée.
+
 ## Utilisation du serveur
 
 Pour démarrer le serveur, faire:
@@ -131,3 +152,15 @@ Ces tables sont vidées lorsque le lobby repasse en état d'attente et détruite
 ### Le fichier message_queue
 Ce fichier contient une structure de données de file afin d'assurer le traitement et l'envoi des messages dans l'ordre
 dans lequel ils ont été designé pour être envoyés.
+
+## Architecture du client
+
+Le client est relativement simple comparé au serveur. Son travail principal est de faire un rendu du jeu et d'envoyer les bonnes
+commandes au serveur au bon moment.
+
+Les fichiers du client, trouvables dans `client/src/` remplissent les rôles suivants:
+- `main.c`: Le fichier de départ de l'application, c'est ce fichier qui gère la 'machine d'état' qui contrôle l'affichage des différents écrans
+- `message_queue.c`: Le même fichier que dans le serveur.
+- `username_screen.c`: Affiche l'écran qui nous fait rentrer notre pseudo et l'envoit au serveur.
+- `lobbylist_screen.c`: Affiche l'écran qui contient la liste des lobbies du serveur ainsi que l'écran pour créer son lobby.
+- `lobby_screen.c`: Affiche le lobby que l'on rejoint. C'est dans ce fichier que toutes les actions intéressantes de jeu a lieu.

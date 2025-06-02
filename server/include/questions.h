@@ -1,7 +1,7 @@
 #ifndef QUESTIONS_HEADER
 #define QUESTIONS_HEADER
 
-#include <sqlite3.h>
+#include "sqlite3.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

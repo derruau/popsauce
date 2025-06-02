@@ -1,15 +1,3 @@
-/*
-
-Can be compiled with: gcc -o sixel_viewer src/client.c ./lib/libsixel.a -lncurses -Iinclude -lm
-
-Pour le client, j'ai besoin de:
-    - Un check pour savoir si on supporte libsixel
-    - Un ecran pour rentrer son username
-    - Un écran de sélection de lobby / creation de lobby
-    - Un écran de lobby
-    - Un écran de jeu
-    - Un écran de réponse
-*/
 #include "client_main.h"
 #include "username_screen.h"
 #include "lobbylist_screen.h"
@@ -100,7 +88,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // TODO: enable once testing finishes
+    // SCRAPPED Feature: sixel images support. This is why QUESTION_SENT has a type equal to STRING or BITMAP
     // TerminalParams *tp = terminal_specs_check(TERMINAL_SPECS_PATH);
     // if (tp->has_sixel == 0) {
     //     printf( "[ERROR]: Terminal doesn't support the Sixel image format!\n"

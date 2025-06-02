@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Unused for now, it's purpose is to detect if the terminal has sixel support,
+# which most VT-102 compatible terminals are.
+#
+# The Sixel format is an image format that can be printed in a terminal.
+
 # The following defaults may be overridden if autodetection succeeds.
 hassixel=0       # Detects if terminal is sixel-capable
 numcolors=16     # Default number of colors in the palette.

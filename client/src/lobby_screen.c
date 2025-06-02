@@ -154,7 +154,7 @@ int update_player_response(TruePlayersData *tpdata, int player_id, int points_ea
     for (int i = 0; i < tpdata->number_of_players; i++) {
         if (tpdata->players_id[i] == player_id) {
             // Update the player's response
-            tpdata->player_points[i] = points_earned;
+            tpdata->player_points[i] += points_earned;
             tpdata->player_answered[i] = is_correct; // Mark as answered
             memset(tpdata->player_responses[i], 0, MAX_RESPONSE_LENGTH); // Clear previous response
             strncpy(tpdata->player_responses[i], response, MAX_RESPONSE_LENGTH);
@@ -224,10 +224,21 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
     box(answer_window, 0, 0);
 
     wrefresh(question_window);
+    wmove(support_window, 1, 1);
+    wprintw(support_window, "If you're the owner of the lobby, Press ENTER to start the game!");
     wrefresh(support_window);
     wrefresh(answer_window);
 
+    for (int i = 0; i < tpdata->number_of_players; i++) {
+        wmove(right_window, i + 1, 1);
+        wprintw(right_window, "%s - Points: %d\n\n", tpdata->player_names[i], tpdata->player_points[i]);
+    }
+    box(right_window, 0, 0);
+    wrefresh(right_window);
+
+
     nodelay(answer_window, TRUE);
+    int n_chars = 0;
     while (1) {
 
         int ch = wgetch(answer_window);
@@ -238,13 +249,14 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
         case KEY_BACKSPACE:
         case 127: // Handle backspace
         case 8:
+            n_chars = n_chars - 1 < 0 ? 0 : n_chars - 1; 
             form_driver(form, REQ_DEL_PREV);
             break;
         case KEY_LEFT:
             form_driver(form, REQ_PREV_CHAR);
             break;
         case KEY_RIGHT:
-            form_driver(form, REQ_NEXT_CHAR);
+            form_driver(form, REQ_NEXT_CHAR);        clear();
             break;
         case KEY_ENTER:
         case '\n':
@@ -255,20 +267,27 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
                 uint8_t *buffer;
                 serialize_message(m, &buffer, &buffer_size);
                 send_message(p->socket, buffer, buffer_size, NULL);
+                wmove(support_window, 1, 1);
+                werase(support_window);
+                wprintw(support_window, "Game is starting...");
+                wrefresh(support_window);
                 free(buffer);
                 free_message(m);
+                form_driver(form, REQ_DEL_CHAR);
                 break;
             }
 
             // SEND the answer
+            form_driver(form, REQ_VALIDATION);
             char *answer = field_buffer(field[0], 0);
             if (strlen(answer) > 0) {
-                AnswerSent *as = malloc(sizeof(AnswerSent));
-                if (as == NULL) {
+                SendResponse *sr = malloc(sizeof(SendResponse));
+                if (sr == NULL) {
                     continue; // Error allocating memory
                 }
-                strncpy(as->answer, answer, MAX_RESPONSE_LENGTH);
-                Message *m = payload_to_message(ANSWER_SENT, (void*)as, p->player_id);
+                strncpy(sr->response, answer, MAX_RESPONSE_LENGTH);
+                sr->response[n_chars] = '\0';
+                Message *m = payload_to_message(SEND_RESPONSE, (void*)sr, p->player_id);
 
                 uint32_t buffer_size;
                 uint8_t *buffer;
@@ -279,9 +298,12 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
                 free_message(m);
 
                 set_field_buffer(field[0], 0, ""); // Clear the answer field
+                form_driver(form, REQ_VALIDATION);
+                n_chars = 0;
             }
             break;
         default:
+            n_chars++;
             form_driver(form, ch);
             break;
         }
@@ -290,6 +312,7 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
         if (mqi == NULL) {
             continue; // Exit if no message is received
         }
+        
 
         switch (mqi->m->type) {
         case PLAYER_JOINED:
@@ -297,8 +320,9 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
             add_player_to_tpdata(tpdata, pj->name, pj->player_id);
 
             wclear(right_window);
-
+            
             for (int i = 0; i < tpdata->number_of_players; i++) {
+                wmove(right_window, i + 1, 1);
                 wprintw(right_window, "%s - Points: %d\n\n", tpdata->player_names[i], tpdata->player_points[i]);
             }
             box(right_window, 0, 0);
@@ -311,6 +335,7 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
             wclear(right_window);
 
             for (int i = 0; i < tpdata->number_of_players; i++) {
+                wmove(right_window, i + 1, 1);
                 wprintw(right_window, "%s - Points: %d\n\n", tpdata->player_names[i], tpdata->player_points[i]);
             }
             box(right_window, 0, 0);
@@ -324,6 +349,7 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
             wclear(right_window);
 
             for (int i = 0; i < tpdata->number_of_players; i++) {
+                wmove(right_window, i + 1, 1);
                 wprintw(right_window, "%s - Points: %d\n\n", tpdata->player_names[i], tpdata->player_points[i]);
             }
             box(right_window, 0, 0);
@@ -333,40 +359,48 @@ ClientState handle_lobby_screen(ClientState cs, ClientPlayer *p, PlayersData **p
             lobby_state = CS_QUESTION;
             QuestionSent *qs = (QuestionSent*)mqi->m->payload;
 
+            werase(question_window);
             wprintw(question_window, "%s", qs->question);
             wrefresh(question_window);
             // Clear previous support text
             werase(support_window);
             wprintw(support_window, "%s", qs->support);
             wrefresh(support_window);
-            
-
-            // // Free previous question support if it exists
-            // if (question_support != NULL) {
-            //     free(question_support);
-            // }
-            // strncpy(question_text, qs->question, sizeof(question_text));
-            // question_text[sizeof(qs->question)] = '\0'; // Ensure null termination
-            // question_support_type = qs->support_type;
-            // int len = sizeof(qs->support) + 1;
-            // question_support = malloc(len);
-            // strncpy(question_support, qs->support, len);
-            // question_support[sizeof(qs->support)] = '\0';
-
-            // lobby_state = CS_QUESTION;
             break;
         case ANSWER_SENT:
             lobby_state = CS_ANSWER;
             AnswerSent *as = (AnswerSent*)mqi->m->payload;
-            strncpy(question_answer, as->answer, sizeof(question_answer));
-            question_answer[sizeof(as->answer)] = '\0';
-            lobby_state = CS_ANSWER;
+
+            // Clear previous support text
+            werase(support_window);
+            wprintw(support_window, "Answer: %s", as->answer);
+            wrefresh(support_window);
+            // refresh();
             break;
         case GAME_STARTS:
             break;
         case GAME_ENDED:
+            werase(question_window);
+            werase(support_window);
+
+            // clear();
+            int winner_id = ((GameEnded*)mqi->m->payload)->winner_id;
+            char winner_username[MAX_USERNAME_LENGTH]; 
+            for (int i = 0; i < tpdata->number_of_players; i++) {
+                if(winner_id == tpdata->players_id[i]) {
+                    strncpy(winner_username, tpdata->player_names[i], MAX_USERNAME_LENGTH);
+                    break;
+                }
+            }
+
+            wprintw(support_window, "Game Ended!\n");
+            wprintw(support_window, "Winner: %s\n", winner_username);
+            wrefresh(support_window);
+
+            sleep(5);
+
             lobby_state = CS_WAITING_ROOM;
-            break;
+            return CS_DISCONNECTED;
         default:
             break;
         }

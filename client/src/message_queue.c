@@ -1,4 +1,3 @@
-// Cette structure doit contenir pour chaque message le moment où il est arrivé
 #include <time.h>
 #include <stdlib.h>
 #include <pthread.h>

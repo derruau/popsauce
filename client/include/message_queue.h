@@ -6,7 +6,7 @@
 #include <pthread.h>
 #include "common.h"
 
-#define MAX_QUEUE_SIZE 20 // TODO: ne pas mettre une valeur au pif
+#define MAX_QUEUE_SIZE 20
 
 typedef struct {
     time_t time;

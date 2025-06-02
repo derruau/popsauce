@@ -518,7 +518,11 @@ void free_message(Message *m) {
             break;
     }
 
-    free(m);
+    if (m != NULL) {
+        free(m);
+    }
+
+    m = NULL;
 }
 
 // Returns a Message from a payload and the player's uuid.
@@ -605,6 +609,7 @@ int send_message(int sockfd, uint8_t *buffer, uint32_t buffer_size, Message **re
     if (buffer == NULL) {
         return 1;
     }
+
 
     write(sockfd, buffer, buffer_size);
 
