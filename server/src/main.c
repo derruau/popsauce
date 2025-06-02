@@ -25,6 +25,8 @@ int broadcast(Message *m, int lobby_id) {
     uint32_t buffer_size;
     uint8_t *buffer;
 
+    printf("[SERVER]: Broadcasting message of type %i to lobby %i\n", m->type, lobby_id);
+
     int ok = serialize_message(m, &buffer, &buffer_size);
 
     if (ok != 0) {
@@ -33,6 +35,13 @@ int broadcast(Message *m, int lobby_id) {
         ok = serialize_message(m, &buffer, &buffer_size);
         // IDK How we got here
         if (ok != 0) exit(EXIT_FAILURE);
+    }
+
+    // If the lobby doesn't exist, we can't broadcast the message
+    if (lobby_id < 0 || lobby_id >= MAX_NUMBER_OF_LOBBIES || lobbies[lobby_id] == NULL) {
+        free(buffer);
+        free_message(m);
+        return EC_LOBBY_DOESNT_EXIST;
     }
 
     int players_in_lobby;
@@ -52,7 +61,7 @@ void *handle_server_broadcast(void *args) {
         int send_queue_empty = lobby_mq_is_empty(lobby_id, SEND_QUEUE);
         if (send_queue_empty == -1) break; // Lobby doesn't exist anymore
         if (send_queue_empty == 1) {
-            struct timespec ts = {0, 1000000L}; // 1ms
+            struct timespec ts = {.tv_sec = 0, .tv_nsec = 10000000L}; // 10ms
             nanosleep(&ts, &ts);
             continue;
         }
@@ -60,6 +69,11 @@ void *handle_server_broadcast(void *args) {
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
         
         MessageQueueItem *mqi = lobby_dequeue(lobby_id, SEND_QUEUE);
+
+        if (mqi == NULL) {
+            pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+            continue;
+        }
 
         uint32_t buffer_size;
         uint8_t *buffer;
@@ -74,7 +88,7 @@ void *handle_server_broadcast(void *args) {
         }
 
         // Even if there's an error here we can't do anything about it so we don't check
-        send_message(mqi->socket, buffer, buffer_size, NULL);
+        broadcast(mqi->m, lobby_id);
 
         free(buffer);
         free_message(mqi->m);
@@ -258,10 +272,11 @@ void *handle_client_thread(void *arg) {
             } else {
                 response = responsecode_to_message(rc, SERVER_UUID, rc);
             }
-
+            
             safe_send_message(a->socket, response);
             break;
         case DISCONNECT:
+            printf("[SERVER]: Received DISCONNECT Message from thread ID %i\n", a->connection_id);
             rc = delete_player(m->uuid, &response);
 
             if (rc != RC_SUCCESS) {
@@ -274,8 +289,10 @@ void *handle_client_thread(void *arg) {
             break;
         case CREATE_LOBBY:
             CreateLobby *cl = (CreateLobby*)m->payload;
+            printf("[SERVER]: Received CREATE_LOBBY Message from thread ID %i (Lobby Name: %s, %i)\n", a->connection_id, cl->name, cl->max_players);  
             rc = create_lobby(cl->name, cl->max_players, m->uuid, &lobby_id);
 
+            errno = 0;
             response = responsecode_to_message(rc, SERVER_UUID, lobby_id);
 
             if (rc == RC_SUCCESS) {
@@ -290,6 +307,7 @@ void *handle_client_thread(void *arg) {
             break;
         case JOIN_LOBBY:
             JoinLobby *jl = (JoinLobby*)m->payload;
+            printf("[SERVER]: Received JOIN_LOBBY Message from thread ID %i (Lobby ID: %i)\n", a->connection_id, jl->lobby_id);  
             Message *playerjoined;
             rc = join_lobby(m->uuid, jl->lobby_id, &playerjoined);
 
@@ -309,9 +327,10 @@ void *handle_client_thread(void *arg) {
             break;
         case QUIT_LOBBY:
             Message *playerquit;
-            rc = quit_lobby(m->uuid, &playerquit);
-
+            printf("[SERVER]: Received QUIT_LOBBY Message from thread ID %i\n", jl->lobby_id);  
             lobby_id = get_lobby_of_player(m->uuid);
+            
+            rc = quit_lobby(m->uuid, &playerquit);
 
             // TODO: maybe add a confirmation message that you successfully quit?
             if (rc != RC_SUCCESS) {
@@ -321,14 +340,17 @@ void *handle_client_thread(void *arg) {
             break;
         case START_GAME:
             lobby_id = get_lobby_of_player(m->uuid);
+            printf("[SERVER]: Received START_GAME Message from thread ID %i (Lobby: %i)\n", a->connection_id, lobby_id);
             rc = start_game(m->uuid, lobby_id);
             // The response is queued by game_loop()
-
             if (rc != RC_SUCCESS) {
+                printf("[SERVER]: Received START_GAME Message from thread ID %i.\n"
+                        "          Cannot start the game!", lobby_id);  
                 response = responsecode_to_message(rc, SERVER_UUID, rc);
                 safe_send_message(a->socket, response);
                 break;
             }
+            printf("[SERVER]: Received START_GAME Message from thread ID %i\n", lobby_id);  
             break;
         case CHANGE_RULES:
             //TODO:

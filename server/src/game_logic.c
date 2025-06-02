@@ -601,7 +601,8 @@ ResponseCode start_game(int player_id, int lobby_id) {
 
     Lobby *l = lobbies[lobby_id];
     
-    
+    printf("here\n");
+
     int player_space = get_player_space_from_id(player_id);
     if (player_space == -1) return EC_INTERNAL_ERROR;
     
