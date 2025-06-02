@@ -498,11 +498,7 @@ int __deserialize_players_data(uint8_t *buffer, void **payload) {
 // Frees a Message 
 void free_message(Message *m) {
     if (__payload_is_fixed_size(m->type)) {
-        if (m->payload_size == 0) {
-            // No payload to free
-            m->payload = NULL;
-        } 
-        else free(m->payload);
+        if (m->payload_size != 0) free(m->payload);
     }
 
     switch (m->type) {
